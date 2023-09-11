@@ -17,6 +17,7 @@ library(lubridate)
 library(lme4)
 library(readxl)
 library(writexl)
+library(sf)
 theme_set(theme_minimal())
 ```
 
@@ -45,6 +46,33 @@ veg_data_2022_summary <- veg_data_2022 %>%
   as_tibble()
 
 view(veg_data_2022_summary)
+```
+
+Lets add a distance to edge column for our points (Not sure if locations outside of burned areas should be negative?)
+```{r}
+#Importing map of burned areas, summer 2022.
+#Reading burn compartments in again, but as an sf object
+burn_compartments_2022 <- st_read("/Volumes/Samsung_T5/BOBWHITE_DATA/Maps/Burn_Compartments2022/2022_BurnUnits.shp")
+
+# Converting burn_compartments_2022 polygons to line geometries that represent their boundaries. This is necessary to calc min distances later.
+burn_compartment_boundaries <- st_boundary(burn_compartments_2022)
+
+# Converting tibble of points to an sf object
+summer_locs_sf <- st_as_sf(summer_locs, coords = c("easting", "northing"), crs = st_crs(burn_compartments_2022))
+
+# Calculating the distance from each point to the nearest line boundary of the burn compartments, storing it in matrix
+distance_matrix <- st_distance(summer_locs_sf, burn_compartment_boundaries)
+
+# Applying the function min() to each row (1 does this -- we'd use 2 for columns) in the distance matrix
+min_distances <- apply(distance_matrix, 1, min)
+
+# Add the minimum distance to the original tibble as a new column
+summer_locs$distance_to_edge <- min_distances
+
+#Printing
+print(summer_locs)
+
+
 ```
 
 Lets add in age and sex info for our location data. This may be useful later.
@@ -141,5 +169,12 @@ prob_burn_area_DSF <- glmer(burned ~ DSF + (1|band_numb),
  
 #Viewing summary 
 summary(prob_burn_area_DSF) 
+
+
+```
+
+Lets try our candidate models from our proposal.
+```{r}
+
 ```
 
