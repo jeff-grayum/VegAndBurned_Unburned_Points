@@ -1,0 +1,145 @@
+---
+title: "Burned_Unburned_Locs_VegData"
+output: html_document
+date: "2023-09-11"
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(janitor)
+library(ggthemes)
+library(lubridate)
+library(lme4)
+library(readxl)
+library(writexl)
+theme_set(theme_minimal())
+```
+
+Importing datasets
+```{r}
+veg_data_2022 <- read_xlsx("/Volumes/Samsung_T5/BOBWHITE_DATA/Clean/VegSurveys2022.xlsx") %>%
+  clean_names() %>%
+  mutate(date = as.Date(date))
+
+summer_locs <- read_xlsx("/Volumes/Samsung_T5/BOBWHITE_DATA/Clean/summer_2022_locs_burned_and_unburned_clean.xlsx") %>%
+  mutate(date = as.Date(date)) %>%
+  arrange(date) %>%
+  as_tibble()
+```
+
+First, lets summarize our veg data so we have average values for each date, rather than 50 samples.
+```{r}
+veg_data_2022_summary <- veg_data_2022 %>%
+  group_by(date) %>%
+  summarize(median_percent_grasses = median(percent_grasses),
+            median_percent_forbs = median(percent_forbs),
+            median_percent_shrubs = median(percent_shrubs),
+            median_max_grasses = median(max_grasses_cm),
+            median_max_forbs = median(max_forbs_cm),
+            median_max_shrubs = median(max_shrubs_cm)) %>%
+  as_tibble()
+
+view(veg_data_2022_summary)
+```
+
+Lets add in age and sex info for our location data. This may be useful later.
+```{r}
+#The fate spreadsheet has age and sex info for each bird.
+#Importing "fate" spreadsheet
+fate <- rio::import("/Volumes/Samsung_T5/BOBWHITE_DATA/Clean/fate_clean_2021_22.xlsx", setclass = "tibble") %>%
+  clean_names() %>%
+  rename(band_numb = band_number) 
+
+#Now we bind age and sex into locations, based on band_numb
+summer_locs <- summer_locs %>%
+  left_join(fate %>% 
+              dplyr::select(band_numb, age, sex), 
+            by = "band_numb")
+```
+
+Trying to join veg summary data with Summer 2022 locations.
+We have locations almost everyday, but veg data only once a week. 
+First, we will try adding a column "week" to join by (this looks like it worked).
+```{r}
+#Adding week column to each tibble
+summer_locs$week <- week(summer_locs$date)
+veg_data_2022_summary$week <- week(veg_data_2022_summary$date)
+
+#I am surprised this worked.
+summer_locs %>%
+  view()
+veg_data_2022_summary %>%
+  view()
+
+#Now, we join based on week.
+summer_locs_veg_data <- inner_join(summer_locs, veg_data_2022_summary, by = "week")
+
+#taking a look
+summer_locs_veg_data %>%
+  view()
+
+#write_xlsx(summer_locs_veg_data, "/Volumes/Samsung_T5/BOBWHITE_DATA/Clean/summer_locs_veg_data.xlsx")
+```
+
+Trying to run a mixed-model.
+```{r}
+#First I think we gotta standardize our covariates?
+#Doing this in two steps.. one step for percent cover class, one for max height. Not sure if this is even necessary.
+summer_locs_veg_data_mod1 <- summer_locs_veg_data %>% 
+  mutate_at(vars(median_percent_grasses:median_percent_shrubs), .funs = function(x){as.numeric(scale(x, center = T))}) 
+
+summer_locs_veg_data_mod2 <- summer_locs_veg_data_mod1 %>%
+   mutate_at(vars(median_max_grasses:median_max_shrubs), .funs = function(x){as.numeric(scale(x, center = T))}) 
+
+summer_locs_veg_data_final <- summer_locs_veg_data_mod2 %>%
+  mutate_at(vars(DSF), .funs = function(x){as.numeric(scale(x, center = T))}) 
+
+summer_locs_veg_data_final %>%
+  view()
+  
+
+#Starting by running a global model.
+#Fitting glm
+prob_burn_area_global <- glmer(burned ~ median_percent_grasses + median_percent_forbs + median_percent_shrubs + median_max_grasses + median_max_forbs + median_max_shrubs + DSF + (1|band_numb),
+                 data = summer_locs_veg_data_final,
+                 na.action = "na.pass",
+                 family = "binomial")
+ 
+#Viewing summary 
+summary(prob_burn_area_global) 
+
+#This model failed to converge
+
+#Now looking at only height
+prob_burn_area_height <- glmer(burned ~ median_max_grasses + median_max_forbs + median_max_shrubs + (1|band_numb),
+                 data = summer_locs_veg_data_final,
+                 na.action = "na.pass",
+                 family = "binomial")
+ 
+#Viewing summary 
+summary(prob_burn_area_height) 
+
+#Now looking at only height
+prob_burn_area_veg_area <- glmer(burned ~ median_percent_grasses + median_percent_forbs + median_percent_shrubs + (1|band_numb),
+                 data = summer_locs_veg_data_final,
+                 na.action = "na.pass",
+                 family = "binomial")
+ 
+#Viewing summary 
+summary(prob_burn_area_veg_area) 
+
+#Only looking at DSF
+prob_burn_area_DSF <- glmer(burned ~ DSF + (1|band_numb),
+                 data = summer_locs_veg_data_final,
+                 na.action = "na.pass",
+                 family = "binomial")
+ 
+#Viewing summary 
+summary(prob_burn_area_DSF) 
+```
+
