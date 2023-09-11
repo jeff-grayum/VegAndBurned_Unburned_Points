@@ -18,6 +18,7 @@ library(lme4)
 library(readxl)
 library(writexl)
 library(sf)
+library(MuMIn)
 theme_set(theme_minimal())
 ```
 
@@ -72,7 +73,12 @@ summer_locs$distance_to_edge <- min_distances
 #Printing
 print(summer_locs)
 
-
+#This looks right, and similar to what we got in other analysis.
+summer_locs %>%
+  dplyr::filter(burned == 1) %>%
+  ggplot(aes(DSF, distance_to_edge)) +
+  geom_point() +
+  geom_smooth()
 ```
 
 Lets add in age and sex info for our location data. This may be useful later.
@@ -118,23 +124,18 @@ Trying to run a mixed-model.
 ```{r}
 #First I think we gotta standardize our covariates?
 #Doing this in two steps.. one step for percent cover class, one for max height. Not sure if this is even necessary.
-summer_locs_veg_data_mod1 <- summer_locs_veg_data %>% 
-  mutate_at(vars(median_percent_grasses:median_percent_shrubs), .funs = function(x){as.numeric(scale(x, center = T))}) 
+summer_locs_veg_data_modified <- summer_locs_veg_data %>% 
+  mutate_at(vars(median_percent_grasses:median_max_shrubs,
+                 DSF:distance_to_edge), .funs = function(x){as.numeric(scale(x, center = T))}) 
 
-summer_locs_veg_data_mod2 <- summer_locs_veg_data_mod1 %>%
-   mutate_at(vars(median_max_grasses:median_max_shrubs), .funs = function(x){as.numeric(scale(x, center = T))}) 
-
-summer_locs_veg_data_final <- summer_locs_veg_data_mod2 %>%
-  mutate_at(vars(DSF), .funs = function(x){as.numeric(scale(x, center = T))}) 
-
-summer_locs_veg_data_final %>%
+summer_locs_veg_data_modified %>%
   view()
   
 
 #Starting by running a global model.
 #Fitting glm
 prob_burn_area_global <- glmer(burned ~ median_percent_grasses + median_percent_forbs + median_percent_shrubs + median_max_grasses + median_max_forbs + median_max_shrubs + DSF + (1|band_numb),
-                 data = summer_locs_veg_data_final,
+                 data = summer_locs_veg_data_modified,
                  na.action = "na.pass",
                  family = "binomial")
  
@@ -145,7 +146,7 @@ summary(prob_burn_area_global)
 
 #Now looking at only height
 prob_burn_area_height <- glmer(burned ~ median_max_grasses + median_max_forbs + median_max_shrubs + (1|band_numb),
-                 data = summer_locs_veg_data_final,
+                 data = summer_locs_veg_data_modified,
                  na.action = "na.pass",
                  family = "binomial")
  
@@ -154,7 +155,7 @@ summary(prob_burn_area_height)
 
 #Now looking at only height
 prob_burn_area_veg_area <- glmer(burned ~ median_percent_grasses + median_percent_forbs + median_percent_shrubs + (1|band_numb),
-                 data = summer_locs_veg_data_final,
+                 data = summer_locs_veg_data_modified,
                  na.action = "na.pass",
                  family = "binomial")
  
@@ -163,7 +164,7 @@ summary(prob_burn_area_veg_area)
 
 #Only looking at DSF
 prob_burn_area_DSF <- glmer(burned ~ DSF + (1|band_numb),
-                 data = summer_locs_veg_data_final,
+                 data = summer_locs_veg_data_modified,
                  na.action = "na.pass",
                  family = "binomial")
  
@@ -171,10 +172,176 @@ prob_burn_area_DSF <- glmer(burned ~ DSF + (1|band_numb),
 summary(prob_burn_area_DSF) 
 
 
+#Only looking at distance to edge
+prob_burn_area_DTE <- glmer(burned ~ distance_to_edge + (1|band_numb),
+                 data = summer_locs_veg_data_modified,
+                 na.action = "na.pass",
+                 family = "binomial")
+ 
+#Viewing summary 
+summary(prob_burn_area_DTE)
 ```
+
 
 Lets try our candidate models from our proposal.
 ```{r}
+globalmodel <- glmer(burned ~ median_percent_grasses + I(median_percent_grasses^2) +
+                               median_percent_forbs + I(median_percent_forbs^2) +
+                               median_percent_shrubs + I(median_percent_shrubs^2) +
+                               median_max_grasses + I(median_max_grasses^2) +
+                               median_max_forbs + I(median_max_forbs^2) +
+                               median_max_shrubs + I(median_max_shrubs^2) +
+                               distance_to_edge + I(distance_to_edge^2) +
+                               DSF + I(DSF^2) + 
+                               (1|band_numb),
+                    data = summer_locs_veg_data_modified,
+                    na.action = "na.pass",
+                    family = "binomial")
+
+model1 <- glmer(burned ~ median_max_shrubs + (1|band_numb),
+                    data = summer_locs_veg_data_modified,
+                    na.action = "na.pass",
+                    family = "binomial")
+
+model2 <- glmer(burned ~ median_max_shrubs + I(median_max_shrubs^2) + (1|band_numb),
+                    data = summer_locs_veg_data_modified,
+                    na.action = "na.pass",
+                    family = "binomial")
+
+model3 <- glmer(burned ~ median_percent_shrubs + (1|band_numb),
+                    data = summer_locs_veg_data_modified,
+                    na.action = "na.pass",
+                    family = "binomial")
+
+model4 <- glmer(burned ~ median_percent_shrubs + I(median_percent_shrubs^2) + (1|band_numb),
+                    data = summer_locs_veg_data_modified,
+                    na.action = "na.pass",
+                    family = "binomial")
+
+
+model5 <-  glmer(burned ~ median_max_grasses +  median_max_forbs + (1|band_numb),
+                    data = summer_locs_veg_data_modified,
+                    na.action = "na.pass",
+                    family = "binomial")
+
+model6 <- glmer(burned ~ median_percent_grasses +  median_percent_forbs + (1|band_numb),
+                    data = summer_locs_veg_data_modified,
+                    na.action = "na.pass",
+                    family = "binomial")
+
+model7 <- glmer(burned ~ median_max_grasses +  median_max_forbs + median_max_shrubs + (1|band_numb),
+                    data = summer_locs_veg_data_modified,
+                    na.action = "na.pass",
+                    family = "binomial")
+
+model8 <- glmer(burned ~  median_max_grasses +  median_max_forbs + median_max_shrubs + distance_to_edge + (1|band_numb),
+                    data = summer_locs_veg_data_modified,
+                    na.action = "na.pass",
+                    family = "binomial")
+
+model9 <- glmer(burned ~ DSF + (1|band_numb),
+                    data = summer_locs_veg_data_modified,
+                    na.action = "na.pass",
+                    family = "binomial")
+
+model10 <- glmer(burned ~ DSF + I(DSF^2) + (1|band_numb),
+                    data = summer_locs_veg_data_modified,
+                    na.action = "na.pass",
+                    family = "binomial")
+
+model11 <-  glmer(burned ~distance_to_edge + (1|band_numb),
+                    data = summer_locs_veg_data_modified,
+                    na.action = "na.pass",
+                    family = "binomial")
+
+model12 <- glmer(burned ~ distance_to_edge + I(distance_to_edge^2) + (1|band_numb),
+                    data = summer_locs_veg_data_modified,
+                    na.action = "na.pass",
+                    family = "binomial")
+
+
+model13 <- glmer(burned ~ DSF + distance_to_edge + (1|band_numb),
+                    data = summer_locs_veg_data_modified,
+                    na.action = "na.pass",
+                    family = "binomial")
+
+model14 <- glmer(burned ~ distance_to_edge + I(distance_to_edge^2) + DSF + (1|band_numb),
+                    data = summer_locs_veg_data_modified,
+                    na.action = "na.pass",
+                    family = "binomial")
+
+model15 <- glmer(burned ~ DSF + I(DSF^2) + distance_to_edge + (1|band_numb),
+                    data = summer_locs_veg_data_modified,
+                    na.action = "na.pass",
+                    family = "binomial")
+
+model16 <- glmer(burned ~ median_percent_grasses + median_max_grasses +(1|band_numb),
+                    data = summer_locs_veg_data_modified,
+                    na.action = "na.pass",
+                    family = "binomial")
+
+model17<- glmer(burned ~ median_max_grasses + median_max_forbs + median_max_shrubs + distance_to_edge + DSF + (1|band_numb),
+                    data = summer_locs_veg_data_modified,
+                    na.action = "na.pass",
+                    family = "binomial")
+
+model18 <- glmer(burned ~ median_percent_shrubs + distance_to_edge + DSF + (1|band_numb),
+                    data = summer_locs_veg_data_modified,
+                    na.action = "na.pass",
+                    family = "binomial")
+
+model19 <- glmer(burned ~ median_percent_shrubs + I(median_percent_shrubs^2) + distance_to_edge + DSF + (1|band_numb),
+                    data = summer_locs_veg_data_modified,
+                    na.action = "na.pass",
+                    family = "binomial")
+
+model20 <- glmer(burned ~ median_max_shrubs + distance_to_edge + DSF + (1|band_numb),
+                    data = summer_locs_veg_data_modified,
+                    na.action = "na.pass",
+                    family = "binomial")
+
+model21 <- glmer(burned ~ median_max_shrubs + I(median_max_shrubs^2) + distance_to_edge + DSF + (1|band_numb),
+                    data = summer_locs_veg_data_modified,
+                    na.action = "na.pass",
+                    family = "binomial")
+
+model22 <- glmer(burned ~ median_max_grasses + median_max_forbs + distance_to_edge + DSF + (1|band_numb),
+                    data = summer_locs_veg_data_modified,
+                    na.action = "na.pass",
+                    family = "binomial")
+
+model23 <- glmer(burned ~ median_percent_grasses + median_percent_forbs + distance_to_edge + DSF + (1|band_numb),
+                    data = summer_locs_veg_data_modified,
+                    na.action = "na.pass",
+                    family = "binomial")
+
+```
+
+Ranking candidate models by AIC
+```{r}
+# Create a data frame to store model names and their AIC values
+model_names <- c("globalmodel", "model1", "model2", "model3", "model4",
+                 "model5", "model6", "model7", "model8", "model9",
+                 "model10", "model11", "model12", "model13", "model14",
+                 "model15", "model16", "model17", "model18", "model19",
+                 "model20", "model21", "model22", "model23")
+
+model_list <- list(globalmodel, model1, model2, model3, model4,
+                   model5, model6, model7, model8, model9,
+                   model10, model11, model12, model13, model14,
+                   model15, model16, model17, model18, model19,
+                   model20, model21, model22, model23)
+
+model_aic <- sapply(model_list, AIC)
+
+# Combine the model names and AIC values into a data frame
+model_comparison <- data.frame(Model = model_names, AIC = model_aic)
+
+# Sort the models by AIC value
+model_comparison_sorted <- model_comparison %>% arrange(AIC)
+
+# View the sorted data frame
+model_comparison_sorted %>% view()
 
 ```
 
