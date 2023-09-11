@@ -343,5 +343,14 @@ model_comparison_sorted <- model_comparison %>% arrange(AIC)
 # View the sorted data frame
 model_comparison_sorted %>% view()
 
+# Calculate the minimum AIC value among all models
+min_aic <- min(model_comparison_sorted$AIC)
+
+# Add a column for Delta AIC
+model_comparison_sorted <- model_comparison_sorted %>%
+  mutate(Delta_AIC = AIC - min_aic)
+
+# View the updated data frame
+model_comparison_sorted %>% view()
 ```
 
