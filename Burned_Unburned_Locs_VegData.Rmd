@@ -20,6 +20,8 @@ library(writexl)
 library(sf)
 library(MuMIn)
 theme_set(theme_minimal())
+#install.packages("sjPlot")
+library(sjPlot)
 ```
 
 Importing datasets
@@ -217,7 +219,7 @@ summer_locs_veg_data$birds_in_burned_area[is.na(summer_locs_veg_data$birds_in_bu
 
 # Calculate percentage of birds in burned areas
 summer_locs_veg_data_perc_burned <- summer_locs_veg_data %>%
-  mutate(percent_in_burned = (birds_in_burned_area / birds_online) * 100)
+  mutate(percent_in_burned = (birds_in_burned_area / birds_online))
 
 # Handling NA values for percent_in_burned
 summer_locs_veg_data_perc_burned$percent_in_burned[is.na(summer_locs_veg_data_perc_burned$percent_in_burned)] <- 0
@@ -227,10 +229,9 @@ ave_burned_per_week <- summer_locs_veg_data_perc_burned %>%
   group_by(week) %>%
   summarize(mean_per_burned = mean(percent_in_burned))
 
-ave_burned_per_week <- ave_burned_per_week %>%
-  mutate(week = (week - 15))
 
 ave_burned_per_week %>%
+  mutate(week = (week - 15)) %>%
   dplyr::filter(week <=15) %>%
   ggplot(aes(week, mean_per_burned)) +
   geom_line() +
@@ -240,10 +241,34 @@ ave_burned_per_week %>%
 
 
 summer_locs_veg_data_perc_burned %>%
-  ggplot(aes(DSF, percent_in_burned)) +
+  dplyr::filter(week <= 30) %>%
+  ggplot(aes(date, percent_in_burned)) +
   geom_point() +
   geom_smooth()
 
+summer_locs_veg_data_perc_burned %>%
+  ggplot(aes(percent_in_burned)) +
+  geom_histogram(bins = 10)
+
+#Trying to run a mixed-model.
+#First, we gotta standardize our covariates
+#Doing this in two steps.. one step for percent cover class, one for max height. Not sure if this is even necessary.
+summer_locs_veg_data_perc_burned_modified <- summer_locs_veg_data_perc_burned %>% 
+  mutate_at(vars(median_percent_grasses:median_max_shrubs,
+                 DSF:distance_to_edge), .funs = function(x){as.numeric(scale(x, center = T))}) 
+
+perc_burn_area_global <- glmer(cbind(birds_in_burned_area, birds_online - birds_in_burned_area) ~ 
+                                median_percent_grasses +  
+                                median_percent_forbs + 
+                                median_percent_shrubs + 
+                                median_max_grasses + 
+                                median_max_forbs + 
+                                median_max_shrubs + 
+                                (1|band_numb),
+                 data = summer_locs_veg_data_perc_burned_modified,
+                 family = binomial)
+
+summary(perc_burn_area_global)
 ```
 
 
@@ -367,154 +392,133 @@ summary(prob_burn_area_DTE)
 ```
 
 
-Lets try our candidate models from our proposal.
+Lets try our candidate models from our proposal (I am removing distance_to_edge and DSF, and only including vegetation covariates)
 ```{r}
-globalmodel <- glmer(burned ~ median_percent_grasses + I(median_percent_grasses^2) +
-                               median_percent_forbs + I(median_percent_forbs^2) +
-                               median_percent_shrubs + I(median_percent_shrubs^2) +
-                               median_max_grasses + I(median_max_grasses^2) +
-                               median_max_forbs + I(median_max_forbs^2) +
-                               median_max_shrubs + I(median_max_shrubs^2) +
-                               distance_to_edge + I(distance_to_edge^2) +
-                               DSF + I(DSF^2) + 
-                               (1|band_numb),
-                    data = summer_locs_veg_data_modified,
-                    na.action = "na.pass",
-                    family = "binomial")
+# Global model
+globalmodel <- glmer(cbind(birds_in_burned_area, birds_online - birds_in_burned_area) ~ 
+                     median_percent_grasses + (median_percent_grasses^2) +
+                     median_percent_forbs + (median_percent_forbs^2) +
+                     median_percent_shrubs + (median_percent_shrubs^2) +
+                     median_max_grasses + (median_max_grasses^2) +
+                     median_max_forbs + (median_max_forbs^2) +
+                     median_max_shrubs + (median_max_shrubs^2) +
+                     (1|band_numb),
+                     data = summer_locs_veg_data_perc_burned_modified,
+                     na.action = "na.pass",
+                     family = "binomial")
 
-model1 <- glmer(burned ~ median_max_shrubs + (1|band_numb),
-                    data = summer_locs_veg_data_modified,
-                    na.action = "na.pass",
-                    family = "binomial")
+# Model 1
+model1 <- glmer(cbind(birds_in_burned_area, birds_online - birds_in_burned_area) ~ median_max_shrubs + (1|band_numb),
+                data = summer_locs_veg_data_perc_burned_modified,
+                na.action = "na.pass",
+                family = "binomial")
 
-model2 <- glmer(burned ~ median_max_shrubs + I(median_max_shrubs^2) + (1|band_numb),
-                    data = summer_locs_veg_data_modified,
-                    na.action = "na.pass",
-                    family = "binomial")
+# Model 2
+model2 <- glmer(cbind(birds_in_burned_area, birds_online - birds_in_burned_area) ~ median_max_shrubs + I(median_max_shrubs^2) + (1|band_numb),
+                data = summer_locs_veg_data_perc_burned_modified,
+                na.action = "na.pass",
+                family = "binomial")
 
-model3 <- glmer(burned ~ median_percent_shrubs + (1|band_numb),
-                    data = summer_locs_veg_data_modified,
-                    na.action = "na.pass",
-                    family = "binomial")
+# Model 3
+model3 <- glmer(cbind(birds_in_burned_area, birds_online - birds_in_burned_area) ~ median_percent_shrubs + (1|band_numb),
+                data = summer_locs_veg_data_perc_burned_modified,
+                na.action = "na.pass",
+                family = "binomial")
 
-model4 <- glmer(burned ~ median_percent_shrubs + I(median_percent_shrubs^2) + (1|band_numb),
-                    data = summer_locs_veg_data_modified,
-                    na.action = "na.pass",
-                    family = "binomial")
+# Model 4 (Quadratic form for median_percent_shrubs)
+model4 <- glmer(cbind(birds_in_burned_area, birds_online - birds_in_burned_area) ~ median_percent_shrubs + I(median_percent_shrubs^2) + (1|band_numb),
+                data = summer_locs_veg_data_perc_burned_modified,
+                na.action = "na.pass",
+                family = "binomial")
+
+# Model 5
+model5 <- glmer(cbind(birds_in_burned_area, birds_online - birds_in_burned_area) ~ median_max_grasses + median_max_forbs + (1|band_numb),
+                data = summer_locs_veg_data_perc_burned_modified,
+                na.action = "na.pass",
+                family = "binomial")
+
+# Model 6
+model6 <- glmer(cbind(birds_in_burned_area, birds_online - birds_in_burned_area) ~ median_percent_grasses + median_percent_forbs + (1|band_numb),
+                data = summer_locs_veg_data_perc_burned_modified,
+                na.action = "na.pass",
+                family = "binomial")
+
+# Model 16
+model16 <- glmer(cbind(birds_in_burned_area, birds_online - birds_in_burned_area) ~ median_percent_grasses + median_max_grasses + (1|band_numb),
+                 data = summer_locs_veg_data_perc_burned_modified,
+                 na.action = "na.pass",
+                 family = "binomial")
+
+#Model 17
+model17 <- glmer(cbind(birds_in_burned_area, birds_online - birds_in_burned_area) ~ median_percent_grasses + median_max_grasses + median_percent_forbs + median_max_forbs + median_percent_shrubs + median_max_shrubs + (1|band_numb),
+                 data = summer_locs_veg_data_perc_burned_modified,
+                 na.action = "na.pass",
+                 family = "binomial")
+
+model18 <- glmer(cbind(birds_in_burned_area, birds_online - birds_in_burned_area) ~ median_percent_forbs + median_max_forbs + median_percent_shrubs + median_max_shrubs + (1|band_numb),
+                 data = summer_locs_veg_data_perc_burned_modified,
+                 na.action = "na.pass",
+                 family = "binomial")
+
+model19 <- glmer(cbind(birds_in_burned_area, birds_online - birds_in_burned_area) ~ median_percent_grasses + median_percent_forbs + median_max_forbs + median_percent_shrubs + median_max_shrubs + (1|band_numb),
+                 data = summer_locs_veg_data_perc_burned_modified,
+                 na.action = "na.pass",
+                 family = "binomial")
+
+model20 <- glmer(cbind(birds_in_burned_area, birds_online - birds_in_burned_area) ~ (median_max_grasses * median_percent_grasses) + (median_percent_forbs * median_max_forbs) + (median_percent_shrubs * median_max_shrubs) + (1|band_numb),
+                 data = summer_locs_veg_data_perc_burned_modified,
+                 na.action = "na.pass",
+                 family = "binomial")
 
 
-model5 <-  glmer(burned ~ median_max_grasses +  median_max_forbs + (1|band_numb),
-                    data = summer_locs_veg_data_modified,
-                    na.action = "na.pass",
-                    family = "binomial")
+model21 <- glmer(cbind(birds_in_burned_area, birds_online - birds_in_burned_area) ~ (median_max_grasses * median_percent_grasses) + (median_percent_forbs * median_max_forbs) + (1|band_numb),
+                 data = summer_locs_veg_data_perc_burned_modified,
+                 na.action = "na.pass",
+                 family = "binomial")
 
-model6 <- glmer(burned ~ median_percent_grasses +  median_percent_forbs + (1|band_numb),
-                    data = summer_locs_veg_data_modified,
-                    na.action = "na.pass",
-                    family = "binomial")
+model22 <- glmer(cbind(birds_in_burned_area, birds_online - birds_in_burned_area) ~ (median_max_grasses * median_percent_grasses) + (median_percent_forbs * median_max_forbs) + (1|band_numb),
+                 data = summer_locs_veg_data_perc_burned_modified,
+                 na.action = "na.pass",
+                 family = "binomial")
 
-model7 <- glmer(burned ~ median_max_grasses +  median_max_forbs + median_max_shrubs + (1|band_numb),
-                    data = summer_locs_veg_data_modified,
-                    na.action = "na.pass",
-                    family = "binomial")
+model23 <- glmer(cbind(birds_in_burned_area, birds_online - birds_in_burned_area) ~ (median_max_grasses * median_percent_grasses) + (1|band_numb),
+                 data = summer_locs_veg_data_perc_burned_modified,
+                 na.action = "na.pass",
+                 family = "binomial")
 
-model8 <- glmer(burned ~  median_max_grasses +  median_max_forbs + median_max_shrubs + distance_to_edge + (1|band_numb),
-                    data = summer_locs_veg_data_modified,
-                    na.action = "na.pass",
-                    family = "binomial")
+model24 <- glmer(cbind(birds_in_burned_area, birds_online - birds_in_burned_area) ~ (median_percent_forbs * median_max_forbs) + (1|band_numb),
+                 data = summer_locs_veg_data_perc_burned_modified,
+                 na.action = "na.pass",
+                 family = "binomial")
 
-model9 <- glmer(burned ~ DSF + (1|band_numb),
-                    data = summer_locs_veg_data_modified,
-                    na.action = "na.pass",
-                    family = "binomial")
+model25 <- glmer(cbind(birds_in_burned_area, birds_online - birds_in_burned_area) ~ (median_percent_shrubs * median_max_shrubs) + (1|band_numb),
+                 data = summer_locs_veg_data_perc_burned_modified,
+                 na.action = "na.pass",
+                 family = "binomial")
 
-model10 <- glmer(burned ~ DSF + I(DSF^2) + (1|band_numb),
-                    data = summer_locs_veg_data_modified,
-                    na.action = "na.pass",
-                    family = "binomial")
+model26 <- glmer(cbind(birds_in_burned_area, birds_online - birds_in_burned_area) ~ (median_percent_grasses * median_percent_forbs) + (median_max_grasses * median_max_forbs) + (1|band_numb),
+                 data = summer_locs_veg_data_perc_burned_modified,
+                 na.action = "na.pass",
+                 family = "binomial")
 
-model11 <-  glmer(burned ~distance_to_edge + (1|band_numb),
-                    data = summer_locs_veg_data_modified,
-                    na.action = "na.pass",
-                    family = "binomial")
-
-model12 <- glmer(burned ~ distance_to_edge + I(distance_to_edge^2) + (1|band_numb),
-                    data = summer_locs_veg_data_modified,
-                    na.action = "na.pass",
-                    family = "binomial")
-
-
-model13 <- glmer(burned ~ DSF + distance_to_edge + (1|band_numb),
-                    data = summer_locs_veg_data_modified,
-                    na.action = "na.pass",
-                    family = "binomial")
-
-model14 <- glmer(burned ~ distance_to_edge + I(distance_to_edge^2) + DSF + (1|band_numb),
-                    data = summer_locs_veg_data_modified,
-                    na.action = "na.pass",
-                    family = "binomial")
-
-model15 <- glmer(burned ~ DSF + I(DSF^2) + distance_to_edge + (1|band_numb),
-                    data = summer_locs_veg_data_modified,
-                    na.action = "na.pass",
-                    family = "binomial")
-
-model16 <- glmer(burned ~ median_percent_grasses + median_max_grasses +(1|band_numb),
-                    data = summer_locs_veg_data_modified,
-                    na.action = "na.pass",
-                    family = "binomial")
-
-model17<- glmer(burned ~ median_max_grasses + median_max_forbs + median_max_shrubs + distance_to_edge + DSF + (1|band_numb),
-                    data = summer_locs_veg_data_modified,
-                    na.action = "na.pass",
-                    family = "binomial")
-
-model18 <- glmer(burned ~ median_percent_shrubs + distance_to_edge + DSF + (1|band_numb),
-                    data = summer_locs_veg_data_modified,
-                    na.action = "na.pass",
-                    family = "binomial")
-
-model19 <- glmer(burned ~ median_percent_shrubs + I(median_percent_shrubs^2) + distance_to_edge + DSF + (1|band_numb),
-                    data = summer_locs_veg_data_modified,
-                    na.action = "na.pass",
-                    family = "binomial")
-
-model20 <- glmer(burned ~ median_max_shrubs + distance_to_edge + DSF + (1|band_numb),
-                    data = summer_locs_veg_data_modified,
-                    na.action = "na.pass",
-                    family = "binomial")
-
-model21 <- glmer(burned ~ median_max_shrubs + I(median_max_shrubs^2) + distance_to_edge + DSF + (1|band_numb),
-                    data = summer_locs_veg_data_modified,
-                    na.action = "na.pass",
-                    family = "binomial")
-
-model22 <- glmer(burned ~ median_max_grasses + median_max_forbs + distance_to_edge + DSF + (1|band_numb),
-                    data = summer_locs_veg_data_modified,
-                    na.action = "na.pass",
-                    family = "binomial")
-
-model23 <- glmer(burned ~ median_percent_grasses + median_percent_forbs + distance_to_edge + DSF + (1|band_numb),
-                    data = summer_locs_veg_data_modified,
-                    na.action = "na.pass",
-                    family = "binomial")
-
+model27 <- glmer(cbind(birds_in_burned_area, birds_online - birds_in_burned_area) ~ median_max_grasses + median_percent_forbs + median_max_forbs + median_percent_shrubs + median_max_shrubs + (1|band_numb),
+                 data = summer_locs_veg_data_perc_burned_modified,
+                 na.action = "na.pass",
+                 family = "binomial")
 ```
 
 Ranking candidate models by AIC
 ```{r}
-# Create a data frame to store model names and their AIC values
+# Creating a data frame to store model names and their AIC values
 model_names <- c("globalmodel", "model1", "model2", "model3", "model4",
                  "model5", "model6", "model7", "model8", "model9",
                  "model10", "model11", "model12", "model13", "model14",
-                 "model15", "model16", "model17", "model18", "model19",
-                 "model20", "model21", "model22", "model23")
+                 "model15", "model16", "model17", "model18", "model19", "model20", "model21", "model22", "model 23", "model24", "model25", "model26", "model27")
 
 model_list <- list(globalmodel, model1, model2, model3, model4,
                    model5, model6, model7, model8, model9,
                    model10, model11, model12, model13, model14,
-                   model15, model16, model17, model18, model19,
-                   model20, model21, model22, model23)
+                   model15, model16, model17, model18, model19, model20, model21, model22, model23, model24, model25, model26, model27)
 
 model_aic <- sapply(model_list, AIC)
 
@@ -536,5 +540,42 @@ model_comparison_sorted <- model_comparison_sorted %>%
 
 # View the updated data frame
 model_comparison_sorted %>% view()
+
+summary(model20)
+summary(model27)
+```
+
+Model 27 is our top model without interactions. Let's look at the summary.
+```{r}
+#trying to plot log-odds
+plot_model(model27, type = "est", transform = NULL, gird.breaks=T, title = "Log-odds for top model: Percentage of birds online located in burned areas each day")
+
+
+model27_summary <- summary(model27)
+
+# Create a data frame to hold the fixed effect coefficients
+fixed_effects <- as.data.frame(model27_summary$coefficients) %>%
+  clean_names()
+
+# Calculate the 95% confidence intervals
+fixed_effects$l_95_CI <- fixed_effects$estimate - 1.96 * fixed_effects$std_error
+fixed_effects$u_95_CI <- fixed_effects$estimate + 1.96 * fixed_effects$std_error
+
+# Add a 'term' column to store the names
+fixed_effects$term <- rownames(fixed_effects)
+
+# Remove the intercept row
+fixed_effects_filtered <- fixed_effects %>% 
+  dplyr::filter(term != "(Intercept)")
+
+# Plot using ggplot2
+ggplot(fixed_effects_filtered, aes(x = term, y = estimate)) +
+  geom_point() +
+  geom_errorbar(aes(ymin = l_95_CI, ymax = u_95_CI), width = 0.2) +
+    geom_hline(aes(yintercept = 0), color = "grey", lty = 2) +
+  coord_flip() +
+  xlab('Fixed Effects') +
+  ylab('Coefficient') +
+  ggtitle('Coefficient Estimates and 95% CI')
 ```
 
