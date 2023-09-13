@@ -31,7 +31,8 @@ veg_data_2022 <- read_xlsx("/Volumes/Samsung_T5/BOBWHITE_DATA/Clean/VegSurveys20
 summer_locs <- read_xlsx("/Volumes/Samsung_T5/BOBWHITE_DATA/Clean/summer_2022_locs_burned_and_unburned_clean.xlsx") %>%
   mutate(date = as.Date(date)) %>%
   arrange(date) %>%
-  as_tibble()
+  as_tibble() %>%
+  view()
 ```
 
 First, lets summarize our veg data so we have average values for each date, rather than 50 samples.
@@ -53,7 +54,7 @@ Lets add a distance to edge column for our points (Not sure if locations outside
 ```{r}
 #Importing map of burned areas, summer 2022.
 #Reading burn compartments in again, but as an sf object
-burn_compartments_2022 <- st_read("/Volumes/Samsung_T5/BOBWHITE_DATA/Maps/Burn_Compartments2022/2022_BurnUnits.shp")
+burn_compartments_2022 <- st_read("/Volumes/Samsung_T5/BOBWHITE_DATA/Maps/2022_burn_compartments/Polygons/2022_BurnedUnits_minusAG2.shp")
 
 # Converting burn_compartments_2022 polygons to line geometries that represent their boundaries. This is necessary to calc min distances later.
 burn_compartment_boundaries <- st_boundary(burn_compartments_2022)
@@ -78,7 +79,70 @@ summer_locs %>%
   dplyr::filter(burned == 1) %>%
   ggplot(aes(DSF, distance_to_edge)) +
   geom_point() +
-  geom_smooth()
+  geom_smooth() +
+  labs(x = "DSF",
+       y = "Distance to edge (m)",
+       title = "Distance to edge following prescribed fire",
+       subtitle = "Only looking at birds within burned units")
+
+summer_locs %>%
+  dplyr::filter(burned == 1) %>%
+  summarize(mean_distance = mean(distance_to_edge))
+
+
+summer_locs %>%
+  dplyr::filter(burned == 1) %>%
+  ggplot(aes(distance_to_edge)) +
+  geom_histogram(binwidth = 10, fill = "midnight blue", alpha = 0.8) + 
+  geom_vline(xintercept = 27.8, linetype = "dashed", color = "gray") +
+  labs(x = "Distance to edge",
+       y = "",
+       title = "Distances to edge following prescribed fire",
+       subtitle = "Only looking at birds within burn compartments")
+
+  
+
+summer_locs %>%
+  dplyr::filter(burned == 0) %>%
+  ggplot(aes(DSF, distance_to_edge)) +
+  geom_point() +
+  geom_smooth() +
+  labs(x = "DSF",
+       y = "Distance to edge",
+       title = "Distance to edge of burned compartments following prescribed fire",
+       subtitle = "Only looking at birds located outside of burned units")
+
+summer_locs %>%
+  dplyr::filter(burned == 0) %>%
+  summarize(mean_distance = mean(distance_to_edge))
+
+
+summer_locs %>%
+  dplyr::filter(burned == 0) %>%
+  ggplot(aes(distance_to_edge)) +
+  geom_histogram(binwidth = 20, fill = "midnight blue", alpha = 0.8) + 
+  geom_vline(xintercept = 96.9, linetype = "dashed", color = "gray") +
+  labs(x = "Distance to edge",
+       y = "",
+       title = "Distances to edge following prescribed fire",
+       subtitle = "Only looking at birds outside of burn compartments")
+
+summer_locs %>%
+  mutate(burned = factor(burned, labels = c("Unburned", "Burned"))) %>%
+  ggplot(aes(x = burned, y = distance_to_edge)) +
+  geom_boxplot(fill = "midnight blue", alpha = 0.5) +
+  labs(x = "Burn Status",
+       y = "Distance to Edge",
+       title = "Distance to edge of burn compartments following prescribed fire")
+
+summer_locs %>%
+  mutate(burned = factor(burned, labels = c("Unburned", "Burned"))) %>%
+  ggplot(aes(x = burned, y = distance_to_edge)) +
+  geom_violin(fill = "midnight blue", alpha = 0.5) +
+  labs(x = "Burn Status",
+       y = "Distance to Edge",
+       title = "Distance to edge following prescribed fire")
+
 ```
 
 Lets add in age and sex info for our location data. This may be useful later.
@@ -117,8 +181,128 @@ summer_locs_veg_data <- inner_join(summer_locs, veg_data_2022_summary, by = "wee
 summer_locs_veg_data %>%
   view()
 
-#write_xlsx(summer_locs_veg_data, "/Volumes/Samsung_T5/BOBWHITE_DATA/Clean/summer_locs_veg_data.xlsx")
+summer_locs_veg_data <- summer_locs_veg_data%>%
+  rename(date = date.x,
+         start_date_of_week = date.y)
+
+#write_xlsx(summer_locs_veg_data, "/Volumes/Samsung_T5/BOBWHITE_DATA/Clean/summer_locs_veg_dataFIXEDdistances.xlsx")
 ```
+
+Trying to determine the proportion of bobwhite that were signaled in burned areas each day (birds in burned areas/unique band numbers signaled that week)
+```{r}
+# Counting birds online each week
+birds_online_each_week <- summer_locs_veg_data %>%
+  group_by(week) %>%
+  summarize(birds_online = n_distinct(band_numb))
+
+# Adding count to tibble
+summer_locs_veg_data <- summer_locs_veg_data %>%
+  left_join(birds_online_each_week, by = "week")
+
+# Handling NA values for birds_online
+summer_locs_veg_data$birds_online[is.na(summer_locs_veg_data$birds_online)] <- 0
+
+# Counting unique birds signaled within a burned area each day
+birds_in_burned_areas_each_day <- summer_locs_veg_data %>%
+  dplyr::filter(burned == 1) %>%
+  group_by(date) %>%
+  summarize(birds_in_burned_area = n_distinct(band_numb))
+
+# Joining into summer locs data
+summer_locs_veg_data <- summer_locs_veg_data %>%
+  left_join(birds_in_burned_areas_each_day, by = "date")
+
+# Handling NA values for birds_in_burned_area
+summer_locs_veg_data$birds_in_burned_area[is.na(summer_locs_veg_data$birds_in_burned_area)] <- 0
+
+# Calculate percentage of birds in burned areas
+summer_locs_veg_data_perc_burned <- summer_locs_veg_data %>%
+  mutate(percent_in_burned = (birds_in_burned_area / birds_online) * 100)
+
+# Handling NA values for percent_in_burned
+summer_locs_veg_data_perc_burned$percent_in_burned[is.na(summer_locs_veg_data_perc_burned$percent_in_burned)] <- 0
+
+
+ave_burned_per_week <- summer_locs_veg_data_perc_burned %>%
+  group_by(week) %>%
+  summarize(mean_per_burned = mean(percent_in_burned))
+
+ave_burned_per_week <- ave_burned_per_week %>%
+  mutate(week = (week - 15))
+
+ave_burned_per_week %>%
+  dplyr::filter(week <=15) %>%
+  ggplot(aes(week, mean_per_burned)) +
+  geom_line() +
+  labs(x = "Weeks following prescribed fire",
+       y = "Mean percentage of birds online that were located in burned areas",
+       title = "Average percentage of birds online that were located in burned areas each week")
+
+
+summer_locs_veg_data_perc_burned %>%
+  ggplot(aes(DSF, percent_in_burned)) +
+  geom_point() +
+  geom_smooth()
+
+```
+
+
+```{r}
+summer_locs_veg_data %>%
+  dplyr::filter(burned == 1) %>%
+  ggplot(aes(median_max_grasses, distance_to_edge)) +
+  geom_point() +
+  geom_smooth() +
+  labs(x = "Median height of grasses",
+       y = "Distance to edge",
+       title = "Grass height vs Dist to Edge")
+
+summer_locs_veg_data %>%
+  dplyr::filter(burned == 1) %>%
+  ggplot(aes(median_max_forbs, distance_to_edge)) +
+  geom_point() +
+  geom_smooth() +
+  labs(x = "Median height of forbs",
+       y = "Distance to edge",
+       title = "Forb height vs Dist to Edge")
+
+summer_locs_veg_data %>%
+  dplyr::filter(burned == 1) %>%
+  ggplot(aes(median_max_shrubs, distance_to_edge)) +
+  geom_point() +
+  geom_smooth() +
+  labs(x = "Median height of shrubs",
+       y = "Distance to edge",
+       title = "Shrub height vs Dist to Edge")
+
+summer_locs_veg_data %>%
+  dplyr::filter(burned == 1) %>%
+  ggplot(aes(median_percent_grasses, distance_to_edge)) +
+  geom_point() +
+  geom_smooth() +
+  labs(x = "Median percent cover of grasses",
+       y = "Distance to edge",
+       title = "Percent cover grass vs Dist to Edge")
+
+summer_locs_veg_data %>%
+  dplyr::filter(burned == 1) %>%
+  ggplot(aes(median_percent_forbs, distance_to_edge)) +
+  geom_point() +
+  geom_smooth() +
+  labs(x = "Median percent cover of forbs",
+       y = "Distance to edge",
+       title = "Percent cover forbs vs Dist to Edge")
+
+summer_locs_veg_data %>%
+  dplyr::filter(burned == 1) %>%
+  ggplot(aes(median_percent_shrubs, distance_to_edge)) +
+  geom_point() +
+  geom_smooth() +
+  labs(x = "Median percent cover of shrubs",
+       y = "Distance to edge",
+       title = "Percent cover shrubs vs Dist to Edge")
+```
+
 
 Trying to run a mixed-model.
 ```{r}
