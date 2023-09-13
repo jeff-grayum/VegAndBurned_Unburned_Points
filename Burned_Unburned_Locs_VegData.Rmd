@@ -569,13 +569,44 @@ fixed_effects_filtered <- fixed_effects %>%
   dplyr::filter(term != "(Intercept)")
 
 # Plot using ggplot2
-ggplot(fixed_effects_filtered, aes(x = term, y = estimate)) +
+fixed_effects_filtered %>%
+ggplot(aes(term, estimate)) +
   geom_point() +
   geom_errorbar(aes(ymin = l_95_CI, ymax = u_95_CI), width = 0.2) +
     geom_hline(aes(yintercept = 0), color = "grey", lty = 2) +
   coord_flip() +
-  xlab('Fixed Effects') +
-  ylab('Coefficient') +
-  ggtitle('Coefficient Estimates and 95% CI')
+  labs(x = "Veg Covariate",
+       y = "Coefficient",
+       title = "Coefficeints and 95% CI of top model with out interactions")
+ 
+#Let's do the same thing for the model with interactions (model 20)
+model20_summary <- summary(model20)
+
+# Create a data frame to hold the fixed effect coefficients
+fixed_effects <- as.data.frame(model20_summary$coefficients) %>%
+  clean_names()
+
+# Calculate the 95% confidence intervals
+fixed_effects$l_95_CI <- fixed_effects$estimate - 1.96 * fixed_effects$std_error
+fixed_effects$u_95_CI <- fixed_effects$estimate + 1.96 * fixed_effects$std_error
+
+# Add a 'term' column to store the names
+fixed_effects$term <- rownames(fixed_effects)
+
+# Remove the intercept row
+fixed_effects_filtered <- fixed_effects %>% 
+  dplyr::filter(term != "(Intercept)")
+
+# Plot using ggplot2
+fixed_effects_filtered %>%
+  ggplot(aes(term, estimate)) +
+  geom_point() +
+  geom_errorbar(aes(ymin = l_95_CI, ymax = u_95_CI), width = 0.2) +
+  geom_hline(aes(yintercept = 0), color = "midnight blue", lty = 2) +
+  coord_flip() +
+  labs(x = "Veg Covariate",
+       y = "Coefficient",
+       title = "Coefficeints and 95% CI of top model with interactions")
+ 
 ```
 
