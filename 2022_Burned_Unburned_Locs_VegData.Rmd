@@ -24,6 +24,9 @@ library(sjPlot)
 library(rsq)
 library(betareg)
 library(broom)
+library(caret)
+library(performance)
+#install.packages("performance")
 theme_set(theme_minimal())
 ```
 
@@ -768,7 +771,7 @@ model36 <- glm(percent_in_burned ~
                      data = summer_locs_veg_data_perc_burned_modified,
                      na.action = "na.pass",
                      family = "gaussian")
-AIC(model36)
+summary(model36)
 
 #Model 37, same as above, but percent shrubs may be more influential with this combination. Including DSF this time
 model37 <- glm(percent_in_burned ~
@@ -1716,7 +1719,6 @@ model41 <- glm(cbind(birds_in_burned_area, birds_online - birds_in_burned_area) 
                      DSF,
                      family = binomial, data = summer_locs_veg_data_perc_burned_modified, na.action = "na.pass")
 
-AIC(model41)
 
 # Model 42, height of grasses, height of forbs, and percent shrubs, plus DSF
 model42 <- glm(cbind(birds_in_burned_area, birds_online - birds_in_burned_area) ~
@@ -1800,6 +1802,115 @@ model_comparison_sorted <- model_comparison_sorted %>%
 model_comparison_sorted %>% view()
 ```
 
+Cross validating top model (binomial)
+```{r}
 
+# Partitioning data into training (80% ) and testing sets 
+set.seed(123)
+trainIndex <- createDataPartition(summer_locs_veg_data_perc_burned_modified$percent_in_burned, p = .8, list = FALSE)
+trainData <- summer_locs_veg_data_perc_burned_modified[trainIndex,]
+testData  <- summer_locs_veg_data_perc_burned_modified[-trainIndex,]
+
+# Example code for fitting a binomial model on training data
+fit_binomial <- glm(cbind(birds_in_burned_area, birds_online - birds_in_burned_area) ~ pg + ps + hg + hs + DSF,
+                    data = trainData, family = binomial, na.action = na.pass)
+
+# k-fold cross-validation (e.g., 10-fold)
+ctrl <- trainControl(method = "cv", number = 10)
+
+train_binomial <- glm(cbind(birds_in_burned_area, birds_online - birds_in_burned_area) ~
+                     pg +
+                     ps +  
+                     hg + 
+                     hs +
+                     DSF,
+                     family = binomial, data = trainData, na.action = "na.pass")
+
+
+testData_new <- testData[,c("pg","ps","hg","hs","DSF")]
+# Evaluating the model on the test set, creating a confusion matrix
+predictions <- predict(train_binomial, newdata = testData, type = "response")
+
+
+
+
+
+plot(predictions - (testData$birds_in_burned_area)/testData$birds_online)
+mtext("Binomial: Predictions - Observed values", outer = TRUE, line = -1, cex = 1.5)
+
+mean_binomial <- mean(predictions - (testData$birds_in_burned_area)/testData$birds_online)
+```
+
+```{r}
+# Partitioning data into training (80% ) and testing sets 
+set.seed(123)
+trainIndex <- createDataPartition(summer_locs_veg_data_perc_burned_modified$percent_in_burned, p = .8, list = FALSE)
+trainData <- summer_locs_veg_data_perc_burned_modified[trainIndex,]
+testData  <- summer_locs_veg_data_perc_burned_modified[-trainIndex,]
+
+# Example code for fitting a binomial model on training data
+fit_beta <- betareg(percent_in_burned ~  hg + pf + hs + DSF,
+                    data = trainData, na.action = na.pass)
+
+# k-fold cross-validation (e.g., 10-fold)
+ctrl <- trainControl(method = "cv", number = 10)
+
+train_beta <- betareg(percent_in_burned ~
+                     hg +
+                     pf +
+                     hs +
+                     DSF,
+                     data = trainData,
+                     na.action = "na.pass")
+
+
+
+testData_new <- testData[,c("pg","ps","hg","hs","DSF")]
+# Evaluating the model on the test set, creating a confusion matrix
+predictions <- predict(train_beta, newdata = testData, type = "response")
+
+
+plot(predictions - (testData$birds_in_burned_area)/testData$birds_online)
+mtext("Beta: Predictions - Observed values", outer = TRUE, line = -1, cex = 1.5)
+
+mean_beta <- mean(predictions - (testData$birds_in_burned_area)/testData$birds_online)
+
+```
+
+Let's check the normal distribution, too.
+```{r}
+# Partitioning data into training (80% ) and testing sets 
+set.seed(123)
+trainIndex <- createDataPartition(summer_locs_veg_data_perc_burned_modified$percent_in_burned, p = .8, list = FALSE)
+trainData <- summer_locs_veg_data_perc_burned_modified[trainIndex,]
+testData  <- summer_locs_veg_data_perc_burned_modified[-trainIndex,]
+
+# Example code for fitting a binomial model on training data
+fit_normal <- glm(percent_in_burned ~  hg + pf + hs + DSF,
+                    data = trainData, na.action = na.pass)
+
+# k-fold cross-validation (e.g., 10-fold)
+ctrl <- trainControl(method = "cv", number = 10)
+
+train_normal <- glm(percent_in_burned ~
+                     hg +
+                     pf +
+                     hs +
+                     DSF,
+                     data = trainData,
+                     na.action = "na.pass")
+
+
+
+
+# Evaluating the model on the test set, creating a confusion matrix
+predictions <- predict(train_normal, newdata = testData, type = "response")
+
+
+plot(predictions - (testData$birds_in_burned_area)/testData$birds_online)
+mtext("Normal: Predictions - Observed values", outer = TRUE, line = -1, cex = 1.5)
+
+mean_normal <- mean(predictions - (testData$birds_in_burned_area)/testData$birds_online)
+```
 
 
