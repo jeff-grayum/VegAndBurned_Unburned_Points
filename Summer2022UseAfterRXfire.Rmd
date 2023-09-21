@@ -1,0 +1,1185 @@
+---
+title: "Summer2022UseAfterRXfire"
+output: html_document
+date: "2023-09-21"
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(janitor)
+library(tidyverse)
+library(ggthemes)
+library(lubridate)
+library(lme4)
+library(readxl)
+library(writexl)
+library(sf)
+library(MuMIn)
+library(sjPlot)
+library(rsq)
+library(betareg)
+library(broom)
+library(caret)
+library(janitor)
+library(performance)
+theme_set(theme_minimal())
+```
+
+
+```{r}
+#Importing summer locations, already joined with veg data and birds online.
+summer2022_locs_veg_data <- read_xlsx("/Volumes/Samsung_T5/BOBWHITE_DATA/Clean/SummerLocations/Summer2022/summer_2022_points_veg_CorrectBirdsOnline.xlsx") %>%
+  mutate(date = ymd(date)) %>%
+  dplyr::filter(status != "D")
+
+#Adding in age/sex of each bird. May be useful
+#The fate spreadsheet has age and sex info for each bird.
+#Importing "fate" spreadsheet
+fate <- rio::import("/Volumes/Samsung_T5/BOBWHITE_DATA/Clean/Fate/fate_clean_2021_22.xlsx", setclass = "tibble") %>%
+  clean_names() %>%
+  rename(band_numb = band_number) 
+
+#Now we bind age and sex into locations, based on band_numb
+summer2022_locs_veg_data <- summer2022_locs_veg_data %>%
+  left_join(fate %>% 
+              dplyr::select(band_numb, age, sex), 
+            by = "band_numb")
+
+```
+
+Determining proportion of birds in burn areas each day.
+```{r}
+# Counting unique birds signaled within a burned area each day
+birds_in_burned_areass <- summer2022_locs_veg_data %>%
+  dplyr::filter(burned == 1) %>%
+  group_by(date) %>%
+  summarize(birds_in_burned_areass = n())
+
+
+# Joining into summer locs data
+summer2022_locs_veg_data <- summer2022_locs_veg_data %>%
+  left_join(birds_in_burned_areass, by = "date")
+
+# Handling NA values for birds_in_burned_areas
+summer2022_locs_veg_data$birds_in_burned_areass[is.na(summer2022_locs_veg_data$birds_in_burned_areass)] <- 0
+
+# Calculate percentage of birds in burned areas
+summer2022_locs_veg_data_perc_burned <- summer2022_locs_veg_data %>%
+  mutate(percent_in_burned = (birds_in_burned_areass / birds_online))
+
+# Handling NA values for percent_in_burned
+summer2022_locs_veg_data_perc_burned$percent_in_burned[is.na(summer2022_locs_veg_data_perc_burned$percent_in_burned)] <- 0
+
+
+ave_burned_per_week <- summer2022_locs_veg_data_perc_burned %>%
+  group_by(week) %>%
+  summarize(mean_per_burned = mean(percent_in_burned))
+```
+
+
+Lets add a distance to edge column for our points 
+```{r}
+#Importing map of burned areas, summer 2022.
+#Reading burn compartments in again, but as an sf object
+burn_compartments_2022 <- st_read("/Volumes/Samsung_T5/BOBWHITE_DATA/Maps/2022_burn_compartments/Polygons/NoAG_NoHW/2022_burn_units_NoAG_NoHW.shp")
+
+# Converting burn_compartments_2022 polygons to line geometries that represent their boundaries. This is necessary to calc min distances later.
+burn_compartment_boundaries <- st_boundary(burn_compartments_2022)
+
+# Converting tibble of points to an sf object
+summer2022_locs_sf <- st_as_sf(summer2022_locs_veg_data_perc_burned, coords = c("easting", "northing"), crs = st_crs(burn_compartments_2022))
+
+# Calculating the distance from each point to the nearest line boundary of the burn compartments, storing it in matrix
+distance_matrix <- st_distance(summer2022_locs_sf, burn_compartment_boundaries)
+
+# Applying the function min() to each row (1 does this -- we'd use 2 for columns) in the distance matrix
+min_distances <- apply(distance_matrix, 1, min)
+
+# Add the minimum distance to the original tibble as a new column
+summer2022_locs_veg_data_perc_burned$distance_to_edge <- min_distances
+
+
+
+#This looks right, and similar to what we got in other analysis.
+summer2022_locs_veg_data_perc_burned %>%
+  dplyr::filter(burned == 1) %>%
+  ggplot(aes(date, distance_to_edge)) +
+  geom_point() +
+  geom_smooth() +
+  labs(x = "DSF",
+       y = "Distance to edge (m)",
+       title = "Distance to edge following prescribed fire",
+       subtitle = "Only looking at birds within burned units")
+
+summer2022_locs_veg_data_perc_burned %>%
+  dplyr::filter(burned == 1) %>%
+  summarize(mean_distance = mean(distance_to_edge))
+
+
+summer2022_locs_veg_data_perc_burned %>%
+  dplyr::filter(burned == 1) %>%
+  ggplot(aes(distance_to_edge)) +
+  geom_histogram(binwidth = 10, fill = "midnight blue", alpha = 0.8) + 
+  geom_vline(xintercept = 28, linetype = "dashed", color = "gray") +
+  labs(x = "Distance to edge",
+       y = "",
+       title = "Distances to edge following prescribed fire",
+       subtitle = "Only looking at birds within burn compartments")
+
+  
+
+summer2022_locs_veg_data_perc_burned %>%
+  dplyr::filter(burned == 0) %>%
+  ggplot(aes(date, distance_to_edge)) +
+  geom_point() +
+  geom_smooth() +
+  labs(x = "DSF",
+       y = "Distance to edge",
+       title = "Distance to edge of burned compartments following prescribed fire",
+       subtitle = "Only looking at birds located in unburned units")
+
+summer_locs %>%
+  dplyr::filter(burned == 0) %>%
+  summarize(mean_distance = mean(distance_to_edge))
+
+
+summer_locs %>%
+  dplyr::filter(burned == 0) %>%
+  ggplot(aes(distance_to_edge)) +
+  geom_histogram(binwidth = 20, fill = "midnight blue", alpha = 0.8) + 
+  geom_vline(xintercept = 96.9, linetype = "dashed", color = "gray") +
+  labs(x = "Distance to edge",
+       y = "",
+       title = "Distances to edge following prescribed fire",
+       subtitle = "Only looking at birds in unburned compartments")
+
+summer_locs %>%
+  mutate(burned = factor(burned, labels = c("Unburned", "Burned"))) %>%
+  ggplot(aes(x = burned, y = distance_to_edge)) +
+  geom_boxplot(fill = "midnight blue", alpha = 0.5) +
+  labs(x = "Burn Status",
+       y = "Distance to Edge",
+       title = "Distance to edge of burn compartments following prescribed fire")
+
+summer_locs %>%
+  mutate(burned = factor(burned, labels = c("Unburned", "Burned"))) %>%
+  ggplot(aes(x = burned, y = distance_to_edge)) +
+  geom_violin(fill = "midnight blue", alpha = 0.5) +
+  labs(x = "Burn Status",
+       y = "Distance to Edge",
+       title = "Distance to edge following prescribed fire")
+
+```
+
+
+Making some plots of use of burned areas over time.
+```{r}
+#Average proportion of birds in burn areas each day, for each week.
+ave_burned_per_week %>%
+  mutate(week = (week - 15)) %>%
+  dplyr::filter(week <=15) %>%
+  ggplot(aes(week, mean_per_burned)) +
+  geom_line() +
+  labs(x = "Weeks following prescribed fire",
+       y = "Mean percentage of birds online that were located in burned areas",
+       title = "Average percentage of birds online that were located in burned areas each week")
+
+#proportion of birds in burn areas each day.
+summer2022_locs_veg_data_perc_burned %>%
+  ggplot(aes(date, percent_in_burned)) +
+  geom_point() +
+  geom_smooth() +
+  scale_y_continuous(labels = percent) +
+  labs(x = "Date",
+       y = "% of birds in burned areas",
+       title = "Percent of birds located in burned areas following prescribed fire")
+```
+
+Centering and scaling vegetation covariates
+```{r}
+summer2022_locs_veg_data_perc_burned_modified <- summer2022_locs_veg_data_perc_burned %>% 
+  mutate_at(vars(pg:hs), .funs = function(x){as.numeric(scale(x, center = T))}) %>%
+  mutate(percent_in_burned = percent_in_burned + 0.00001)
+```
+
+
+candidate models w beta distribution
+```{r}
+#### candidate models with beta distribution ####
+#Global model
+globalmodel <- betareg(percent_in_burned ~
+                     pg +
+                     pf +
+                     ps +    
+                     hg + 
+                     hf + 
+                     DSF,
+                     data = summer2022_locs_veg_data_perc_burned_modified,
+                     na.action = "na.pass")
+                     
+
+
+# Model 1 (all veg influences veg)
+model1 <- betareg(percent_in_burned ~
+                     pg +
+                     pf +
+                     ps + 
+                     hg + 
+                     hf,
+                     data = summer2022_locs_veg_data_perc_burned_modified,
+                     na.action = "na.pass")
+                     
+
+# Model 2 (only looking at herbaceous veg components)
+model2 <- betareg(percent_in_burned ~
+                     pg +
+                     pf +
+                     hg + 
+                     hf,
+                     data = summer2022_locs_veg_data_perc_burned_modified,
+                     na.action = "na.pass")
+                     
+
+# Model 3 only grass influences use
+model3 <- betareg(percent_in_burned ~
+                     pg + 
+                     hg,
+                     data = summer2022_locs_veg_data_perc_burned_modified,
+                     na.action = "na.pass")
+                     
+
+# Model 4 only forbs influence use 
+model4 <- betareg(percent_in_burned ~
+                     pf +  
+                     hf,
+                     data = summer2022_locs_veg_data_perc_burned_modified,
+                     na.action = "na.pass")
+                     
+
+# Model 5 Height of herbaceous veg influencing use
+model5 <- betareg(percent_in_burned ~
+                     hg + 
+                     hf,
+                     data = summer2022_locs_veg_data_perc_burned_modified,
+                     na.action = "na.pass")
+                     
+
+# Model 6 percent of cover of herb veg influencing use
+model6 <- betareg(percent_in_burned ~
+                     pg + 
+                     pf +  
+                     hg + 
+                     hf,
+                     data = summer2022_locs_veg_data_perc_burned_modified,
+                     na.action = "na.pass")
+                     
+
+#Model 7, pecent grasses influence use 
+model7 <- betareg(percent_in_burned ~
+                     pg,
+                     data = summer2022_locs_veg_data_perc_burned_modified,
+                     na.action = "na.pass")
+                     
+
+#Model 8, height grasses influence use 
+model7 <- betareg(percent_in_burned ~
+                     hg,
+                     data = summer2022_locs_veg_data_perc_burned_modified,
+                     na.action = "na.pass")
+                     
+
+#model 8, perc forbs influences use
+model8 <- betareg(percent_in_burned ~
+                     pf,
+                     data = summer2022_locs_veg_data_perc_burned_modified,
+                     na.action = "na.pass")
+                     
+
+#Model 9, height forbs influences use 
+model9 <- betareg(percent_in_burned ~
+                     hf,
+                     data = summer2022_locs_veg_data_perc_burned_modified,
+                     na.action = "na.pass")
+                     
+
+# Model 10 Shrubby height and cover influences use
+model10 <- betareg(percent_in_burned ~
+                     ps +
+                     hs,
+                     data = summer2022_locs_veg_data_perc_burned_modified,
+                     na.action = "na.pass")
+                     
+
+#Model 11 percent of shrubs is most influential
+model11 <- betareg(percent_in_burned ~
+                     ps,
+                     data = summer2022_locs_veg_data_perc_burned_modified,
+                     na.action = "na.pass")
+                     
+
+#Model 12 height of shurbs is most influential
+model12 <- betareg(percent_in_burned ~
+                     hs,
+                     data = summer2022_locs_veg_data_perc_burned_modified,
+                     na.action = "na.pass")
+                     
+
+#Model 13 Height of all veg cover most influences use.
+model13 <- betareg(percent_in_burned ~
+                     hg +
+                     hf +
+                     hs,
+                     data = summer2022_locs_veg_data_perc_burned_modified,
+                     na.action = "na.pass")
+                     
+
+#Model 14 percent cover of all veg cover most influences use.
+model14 <- betareg(percent_in_burned ~
+                     pg +
+                     pf +
+                     ps,
+                     data = summer2022_locs_veg_data_perc_burned_modified,
+                     na.action = "na.pass")
+                     
+
+#model 15 Height of grasses, percent forbs (grow "out" more than "up"), and height of shrubs.
+model15 <- betareg(percent_in_burned ~
+                     hg +
+                     pf +
+                     hs,
+                     data = summer2022_locs_veg_data_perc_burned_modified,
+                     na.action = "na.pass")
+                     
+
+#Model 16, same as above, but percent shrubs may be more influential with this combination.
+model16 <- betareg(percent_in_burned ~
+                     hg +
+                     pf +
+                     ps,
+                     data = summer2022_locs_veg_data_perc_burned_modified,
+                     na.action = "na.pass")
+                     
+
+#Model 17, percent grasses, percent forbs, and height shrubs
+model17 <- betareg(percent_in_burned ~
+                     pg +
+                     pf +
+                     hs,
+                     data = summer2022_locs_veg_data_perc_burned_modified,
+                     na.action = "na.pass")
+                     
+
+#model 18, only height grasses and height shrubs (vertical cover)
+model18 <- betareg(percent_in_burned ~
+                     hg +
+                     hs,
+                     data = summer2022_locs_veg_data_perc_burned_modified,
+                     na.action = "na.pass")
+                     
+
+#Model 19, horizontal cover from forbs, vertical from shrubs
+model19 <- betareg(percent_in_burned ~
+                     pf +
+                     hs,
+                     data = summer2022_locs_veg_data_perc_burned_modified,
+                     na.action = "na.pass")
+                     
+
+#Model 20, horizontal cover from forbs, vertical from grass
+model20 <- betareg(percent_in_burned ~
+                     pf +
+                     hg,
+                     data = summer2022_locs_veg_data_perc_burned_modified,
+                     na.action = "na.pass")
+                     
+
+#Model 21, height of grasses and shrubs
+model21 <- betareg(percent_in_burned ~
+                     hg +
+                     hs,
+                     data = summer2022_locs_veg_data_perc_burned_modified,
+                     na.action = "na.pass")
+                     
+
+
+# Model 22 (only looking at herbaceous veg components, but with DSF)
+model22 <- betareg(percent_in_burned ~
+                     pg +
+                     pf +
+                     hg + 
+                     hf +
+                     DSF,
+                     data = summer2022_locs_veg_data_perc_burned_modified,
+                     na.action = "na.pass")
+                     
+
+# Model 23 only grass influences use, along with DSF
+model23 <- betareg(percent_in_burned ~
+                     pg + 
+                     hg +
+                     DSF,
+                     data = summer2022_locs_veg_data_perc_burned_modified,
+                     na.action = "na.pass")
+                     
+
+# Model 24 only forbs influence use, plus DSF
+model24 <- betareg(percent_in_burned ~
+                     pf +  
+                     hf +
+                     DSF,
+                     data = summer2022_locs_veg_data_perc_burned_modified,
+                     na.action = "na.pass")
+                     
+
+# Model 25 Height of herbaceous veg influencing use, plus DSF
+model25 <- betareg(percent_in_burned ~
+                     hg + 
+                     hf +
+                     DSF, 
+                     data = summer2022_locs_veg_data_perc_burned_modified,
+                     na.action = "na.pass")
+                     
+
+# Model 26 percent of cover of herb veg influencing use, along with DSF
+model26 <- betareg(percent_in_burned ~
+                     pg + 
+                     pf +  
+                     hg + 
+                     hf +
+                     DSF,
+                     data = summer2022_locs_veg_data_perc_burned_modified,
+                     na.action = "na.pass")
+                     
+
+#Model 27, percent grasses influence use, plus DSF
+model27 <- betareg(percent_in_burned ~
+                     pg +
+                     DSF,
+                     data = summer2022_locs_veg_data_perc_burned_modified,
+                     na.action = "na.pass")
+                     
+
+#Model 28, height grasses influence use, plus DSF
+model28 <- betareg(percent_in_burned ~
+                     hg +
+                     DSF,
+                     data = summer2022_locs_veg_data_perc_burned_modified,
+                     na.action = "na.pass")
+                     
+
+#model 29, perc forbs influences use, including DSF
+model29 <- betareg(percent_in_burned ~
+                     pf +
+                     DSF,
+                     data = summer2022_locs_veg_data_perc_burned_modified,
+                     na.action = "na.pass")
+                     
+
+#Model 30, height forbs influences use 
+model30 <- betareg(percent_in_burned ~
+                     hf +
+                     DSF,
+                     data = summer2022_locs_veg_data_perc_burned_modified,
+                     na.action = "na.pass")
+                     
+
+# Model 31 Shrubby height and cover influences use, including DSF
+model31 <- betareg(percent_in_burned ~
+                     ps +
+                     #hs +
+                     DSF,
+                     data = summer2022_locs_veg_data_perc_burned_modified,
+                     na.action = "na.pass")
+                     
+
+#Model 32 percent of shrubs is most influential, including DSF
+model32 <- betareg(percent_in_burned ~
+                     ps +
+                     DSF,
+                     data = summer2022_locs_veg_data_perc_burned_modified,
+                     na.action = "na.pass")
+                     
+
+#Model 33 height of shurbs is most influential, along with DSF
+model33 <- betareg(percent_in_burned ~
+                     hs +
+                     DSF,
+                     data = summer2022_locs_veg_data_perc_burned_modified,
+                     na.action = "na.pass")
+                     
+
+#Model 34 Height of all veg cover most influences use, including DSF.
+model34 <- betareg(percent_in_burned ~
+                     hg +
+                     hf +
+                     hs +
+                     DSF +
+                     IAF,
+                     data = summer2022_locs_veg_data_perc_burned_modified,
+                     na.action = "na.pass")
+                     
+
+#Model 35 percent cover of all veg cover most influences use, with DSF.
+model35 <- betareg(percent_in_burned ~
+                     pg +
+                     pf +
+                     ps +
+                     DSF,
+                     data = summer2022_locs_veg_data_perc_burned_modified,
+                     na.action = "na.pass")
+                     
+
+#model 36 Height of grasses, percent forbs (grow "out" more than "up"), and height of shrubs. Also, DSF
+model36 <- betareg(percent_in_burned ~
+                     hg +
+                     pf +
+                     hs +
+                     DSF,
+                     data = summer2022_locs_veg_data_perc_burned_modified,
+                     na.action = "na.pass")
+
+
+#Model 37, same as above, but percent shrubs may be more influential with this combination. Including DSF this time
+model37 <- betareg(percent_in_burned ~
+                     hg +
+                     pf +
+                     ps +
+                     DSF,
+                     data = summer2022_locs_veg_data_perc_burned_modified,
+                     na.action = "na.pass")
+                     
+
+#Model 38, percent grasses, percent forbs, and height shrubs. Plus DSF
+model38 <- betareg(percent_in_burned ~
+                     pg +
+                     pf +
+                     hs +
+                     DSF,
+                     data = summer2022_locs_veg_data_perc_burned_modified,
+                     na.action = "na.pass")
+                     
+
+#model 39, only height grasses and height shrubs (vertical cover). With DSF.
+model39 <- betareg(percent_in_burned ~
+                     hg +
+                     hs +
+                     DSF,
+                     data = summer2022_locs_veg_data_perc_burned_modified,
+                     na.action = "na.pass")
+                     
+
+#Model 40, horizontal cover from forbs, vertical from shrubs. Including DSF
+model40 <- betareg(percent_in_burned ~
+                     pf +
+                     hs +
+                     DSF,
+                     data = summer2022_locs_veg_data_perc_burned_modified,
+                     na.action = "na.pass")
+                     
+
+#Model 41, horizontal cover from forbs, vertical from grass. Including DSF
+model41 <- betareg(percent_in_burned ~
+                     pf +
+                     hg +
+                     DSF,
+                     data = summer2022_locs_veg_data_perc_burned_modified,
+                     na.action = "na.pass")
+                     
+
+#Model 42, height of grasses and shrubs, plus DSF
+model42 <- betareg(percent_in_burned ~
+                     pf +
+                     hg +
+                     DSF,
+                     data = summer2022_locs_veg_data_perc_burned_modified,
+                     na.action = "na.pass")
+                     
+
+#Model 43, all veg except height grass. Maybe vertical cover from thin blades of grass isn't important
+model43 <- betareg(percent_in_burned ~
+                     pg +
+                     pf +
+                     ps + 
+                     hf + 
+                     hs,
+                     data = summer2022_locs_veg_data_perc_burned_modified,
+                     na.action = "na.pass")
+                     
+
+#Model 44, all veg except height grass height forbs. Maybe forbs provide better horizontal cover
+model44 <- betareg(percent_in_burned ~
+                     pg +
+                     pf +
+                     hg + 
+                     hs,
+                     data = summer2022_locs_veg_data_perc_burned_modified,
+                     na.action = "na.pass")
+                     
+
+#Model 45, all veg except height grass height forbs. Maybe forbs provide better horizontal cover
+model45 <- betareg(percent_in_burned ~
+                     pg +
+                     pf +
+                     ps +
+                     hs,
+                     data = summer2022_locs_veg_data_perc_burned_modified,
+                     na.action = "na.pass")
+                     
+
+#model 46, only DSF
+model46 <- betareg(percent_in_burned ~
+                     DSF,
+                     data = summer2022_locs_veg_data_perc_burned_modified,
+                     na.action = "na.pass")
+                     
+```
+
+```{r}
+#### ranking beta models ####
+# Creating a data frame to store model names and their AIC values
+model_names <- c("globalmodel", paste0("model", 1:46))
+
+
+model_list <- list(globalmodel, model1, model2, model3, model4,
+                   model5, model6, model7, model8, model9,
+                   model10, model11, model12, model13, model14,
+                   model15, model16, model17, model18, model19,
+                   model20, model21, model22, model23, model24,
+                   model25, model26, model27, model28, model29,
+                   model30, model31, model32, model33, model34,
+                   model35, model36, model37, model38, model39,
+                   model40, model41, model42, model43, model44, model45, model46)
+
+
+model_aic <- sapply(model_list, AIC)
+
+# Combine the model names and AIC values into a data frame
+model_comparison <- data.frame(Model = model_names, AIC = model_aic)
+
+# Sort the models by AIC value
+model_comparison_sorted <- model_comparison %>% 
+  arrange(AIC)
+
+# View the sorted data frame
+model_comparison_sorted %>% 
+  view()
+
+# Calculate the minimum AIC value among all models
+min_aic <- min(model_comparison_sorted$AIC)
+
+# Add a column for Delta AIC
+model_comparison_sorted <- model_comparison_sorted %>%
+  mutate(Delta_AIC = AIC - min_aic)
+
+# View the updated data frame
+model_comparison_sorted %>% view()
+```
+
+Now looking at all models with binomial distribution
+```{r}
+#### candidate models, binomial distribution ####
+#Global model
+globalmodel <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
+                     pg +
+                     pf +
+                     ps +    
+                     hg + 
+                     hf + 
+                     DSF,
+                     data = summer2022_locs_veg_data_perc_burned_modified,
+                     family = binomial,
+                     na.action = "na.pass")
+
+# Model 1
+model1 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
+                     pg +
+                     pf +
+                     ps + 
+                     hg + 
+                     hf,
+                     data = summer2022_locs_veg_data_perc_burned_modified,
+                     family = binomial,
+                     na.action = "na.pass")
+
+# Model 2
+model2 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
+                     pg +
+                     pf +
+                     hg + 
+                     hf,
+                     data = summer2022_locs_veg_data_perc_burned_modified,
+                     family = binomial,
+                     na.action = "na.pass")
+
+# Model 3
+model3 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
+                     pg + 
+                     hg,
+                     data = summer2022_locs_veg_data_perc_burned_modified,
+                     family = binomial,
+                     na.action = "na.pass")
+
+# Model 4
+model4 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
+                     pf +  
+                     hf,
+                     data = summer2022_locs_veg_data_perc_burned_modified,
+                     family = binomial,
+                     na.action = "na.pass")
+
+# Model 5
+model5 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
+                     hg + 
+                     hf,
+                     data = summer2022_locs_veg_data_perc_burned_modified,
+                     family = binomial,
+                     na.action = "na.pass")
+
+# Model 6
+model6 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
+                     pg + 
+                     pf +  
+                     hg + 
+                     hf,
+                     data = summer2022_locs_veg_data_perc_burned_modified,
+                     family = binomial,
+                     na.action = "na.pass")
+
+# Model 7
+model7 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
+                     pg,
+                     data = summer2022_locs_veg_data_perc_burned_modified,
+                     family = binomial,
+                     na.action = "na.pass")
+
+# Model 8
+model8 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
+                     pf,
+                     data = summer2022_locs_veg_data_perc_burned_modified,
+                     family = binomial,
+                     na.action = "na.pass")
+
+# Model 9
+model9 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
+                     hf,
+                     data = summer2022_locs_veg_data_perc_burned_modified,
+                     family = binomial,
+                     na.action = "na.pass")
+
+# Model 10
+model10 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
+                     ps +
+                     hs,
+                     data = summer2022_locs_veg_data_perc_burned_modified,
+                     family = binomial,
+                     na.action = "na.pass")
+
+# Model 11
+model11 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
+                     ps,
+                     data = summer2022_locs_veg_data_perc_burned_modified,
+                     family = binomial,
+                     na.action = "na.pass")
+
+# Model 12
+model12 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
+                     hs,
+                     data = summer2022_locs_veg_data_perc_burned_modified,
+                     family = binomial,
+                     na.action = "na.pass")
+
+# Model 13
+model13 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
+                     hg +
+                     hf +
+                     hs,
+                     data = summer2022_locs_veg_data_perc_burned_modified,
+                     family = binomial,
+                     na.action = "na.pass")
+
+# Model 14
+model14 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
+                     pg +
+                     pf +
+                     ps,
+                     data = summer2022_locs_veg_data_perc_burned_modified,
+                     family = binomial,
+                     na.action = "na.pass")
+
+# Model 15
+model15 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
+                     hg +
+                     pf +
+                     hs,
+                     data = summer2022_locs_veg_data_perc_burned_modified,
+                     family = binomial,
+                     na.action = "na.pass")
+
+# Model 16
+model16 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
+                     hg +
+                     pf +
+                     ps,
+                     data = summer2022_locs_veg_data_perc_burned_modified,
+                     family = binomial,
+                     na.action = "na.pass")
+
+# Model 17
+model17 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
+                     pg +
+                     pf +
+                     hs,
+                     data = summer2022_locs_veg_data_perc_burned_modified,
+                     family = binomial,
+                     na.action = "na.pass")
+
+# Model 18
+model18 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
+                     hg +
+                     hs,
+                     data = summer2022_locs_veg_data_perc_burned_modified,
+                     family = binomial,
+                     na.action = "na.pass")
+
+# Model 19
+model19 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
+                     pf +
+                     hs,
+                     data = summer2022_locs_veg_data_perc_burned_modified,
+                     family = binomial,
+                     na.action = "na.pass")
+
+# Model 20
+model20 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
+                     pf +
+                     hg,
+                     data = summer2022_locs_veg_data_perc_burned_modified,
+                     family = binomial,
+                     na.action = "na.pass")
+
+
+#Model 21, height of grasses and shrubs
+model21 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
+                     hg +
+                     hs,
+                     family = binomial, data = summer2022_locs_veg_data_perc_burned_modified, na.action = "na.pass")
+
+# Model 22 (only looking at herbaceous veg components, but with DSF)
+model22 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
+                     pg +
+                     pf +
+                     hg + 
+                     hf +
+                     DSF,
+                     family = binomial, data = summer2022_locs_veg_data_perc_burned_modified, na.action = "na.pass")
+
+# Model 23 only grass influences use, along with DSF
+model23 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
+                     pg + 
+                     hg +
+                     DSF,
+                     family = binomial, data = summer2022_locs_veg_data_perc_burned_modified, na.action = "na.pass")
+
+# Model 24 only forbs influence use, plus DSF
+model24 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
+                     pf +  
+                     hf +
+                     DSF,
+                     family = binomial, data = summer2022_locs_veg_data_perc_burned_modified, na.action = "na.pass")
+
+# Model 25 Height of herbaceous veg influencing use, plus DSF
+model25 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
+                     hg + 
+                     hf +
+                     DSF, 
+                     family = binomial, data = summer2022_locs_veg_data_perc_burned_modified, na.action = "na.pass")
+
+# Model 26 percent of cover of herb veg influencing use, along with DSF
+model26 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
+                     pg + 
+                     pf +  
+                     hg + 
+                     hf +
+                     DSF,
+                     family = binomial, data = summer2022_locs_veg_data_perc_burned_modified, na.action = "na.pass")
+
+# Model 27, percent grasses influence use, plus DSF
+model27 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
+                     pg +
+                     DSF,
+                     family = binomial, data = summer2022_locs_veg_data_perc_burned_modified, na.action = "na.pass")
+
+# Model 28, height grasses influence use, plus DSF
+model28 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
+                     hg +
+                     DSF,
+                     family = binomial, data = summer2022_locs_veg_data_perc_burned_modified, na.action = "na.pass")
+
+# Model 29, perc forbs influences use, including DSF
+model29 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
+                     pf +
+                     DSF,
+                     family = binomial, data = summer2022_locs_veg_data_perc_burned_modified, na.action = "na.pass")
+
+# Model 30, height forbs influences use 
+model30 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
+                     hf +
+                     DSF,
+                     family = binomial, data = summer2022_locs_veg_data_perc_burned_modified, na.action = "na.pass")
+
+# Model 31 Shrubby height and cover influences use, including DSF
+model31 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
+                     ps +
+                     DSF,
+                     family = binomial, data = summer2022_locs_veg_data_perc_burned_modified, na.action = "na.pass")
+
+# Model 32 percent of shrubs is most influential, including DSF
+model32 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
+                     ps +
+                     DSF,
+                     family = binomial, data = summer2022_locs_veg_data_perc_burned_modified, na.action = "na.pass")
+
+# Model 33 height of shurbs is most influential, along with DSF
+model33 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
+                     hs +
+                     DSF,
+                     family = binomial, data = summer2022_locs_veg_data_perc_burned_modified, na.action = "na.pass")
+
+# Model 34 Height of all veg cover most influences use, including DSF.
+model34 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
+                     hg +
+                     hf +
+                     hs +
+                     DSF,
+                     family = binomial, data = summer2022_locs_veg_data_perc_burned_modified, na.action = "na.pass")
+
+# Model 35 percent cover of all veg cover most influences use, with DSF.
+model35 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
+                     pg +
+                     pf +
+                     ps +
+                     DSF,
+                     family = binomial, data = summer2022_locs_veg_data_perc_burned_modified, na.action = "na.pass")
+
+# Model 36 Height of grasses, percent forbs (grow "out" more than "up"), and height of shrubs. Also, DSF
+model36 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
+                     hg +
+                     pf +
+                     hs +
+                     DSF,
+                     family = binomial, data = summer2022_locs_veg_data_perc_burned_modified, na.action = "na.pass")
+
+# Model 37, same as above, but percent shrubs may be more influential with this combination. Including DSF this time
+model37 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
+                     hg +
+                     pf +
+                     ps +
+                     DSF,
+                     family = binomial, data = summer2022_locs_veg_data_perc_burned_modified, na.action = "na.pass")
+
+# Model 38, percent grasses, percent forbs, and height shrubs. Plus DSF
+model38 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
+                     pg +
+                     pf +
+                     hs +
+                     DSF,
+                     family = binomial, data = summer2022_locs_veg_data_perc_burned_modified, na.action = "na.pass")
+
+# Model 39, only height grasses and height shrubs (vertical cover). With DSF.
+model39 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
+                     hg +
+                     hs +
+                     DSF,
+                     family = binomial, data = summer2022_locs_veg_data_perc_burned_modified, na.action = "na.pass")
+
+# Model 40, only percent grasses and percent shrubs (horizontal cover). Including DSF.
+model40 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
+                     pg +
+                     ps +
+                     DSF,
+                     family = binomial, data = summer2022_locs_veg_data_perc_burned_modified, na.action = "na.pass")
+
+# Model 41, grasses and shrubs
+model41 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
+                     pg +
+                     ps +  
+                     hg + 
+                     hs +
+                     DSF,
+                     family = binomial, data = summer2022_locs_veg_data_perc_burned_modified, na.action = "na.pass")
+
+
+# Model 42, height of grasses, height of forbs, and percent shrubs, plus DSF
+model42 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
+                     hg +
+                     hf +
+                     ps +
+                     DSF,
+                     family = binomial, data = summer2022_locs_veg_data_perc_burned_modified, na.action = "na.pass")
+
+# Model 43, height of grasses, percent forbs, and percent shrubs, plus DSF
+model43 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
+                     hg +
+                     pf +
+                     ps +
+                     DSF,
+                     family = binomial, data = summer2022_locs_veg_data_perc_burned_modified, na.action = "na.pass")
+
+# Model 44, percent grasses, height of forbs, and height of shrubs, plus DSF
+model44 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
+                     pg +
+                     hf +
+                     hs +
+                     DSF,
+                     family = binomial, data = summer2022_locs_veg_data_perc_burned_modified, na.action = "na.pass")
+
+# Model 45, percent grasses, percent forbs, and height of shrubs. Plus DSF.
+model45 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
+                     pg +
+                     pf +
+                     hs +
+                     DSF,
+                     family = binomial, data = summer2022_locs_veg_data_perc_burned_modified, na.action = "na.pass")
+
+# Model 46, only DSF
+model46 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
+                     DSF,
+                     family = binomial, data = summer2022_locs_veg_data_perc_burned_modified, na.action = "na.pass")
+
+
+```
+
+Looking at results of binomial models
+```{r}
+#### ranking binomial models ####
+# Creating a data frame to store model names and their AIC values
+model_names <- c("globalmodel", paste0("model", 1:46))
+
+
+model_list <- list(globalmodel, model1, model2, model3, model4,
+                   model5, model6, model7, model8, model9,
+                   model10, model11, model12, model13, model14,
+                   model15, model16, model17, model18, model19,
+                   model20, model21, model22, model23, model24,
+                   model25, model26, model27, model28, model29,
+                   model30, model31, model32, model33, model34,
+                   model35, model36, model37, model38, model39,
+                   model40, model41, model42, model43, model44, model45, model46)
+
+
+model_aic <- sapply(model_list, AIC)
+
+# Combine the model names and AIC values into a data frame
+model_comparison <- data.frame(Model = model_names, AIC = model_aic)
+
+# Sort the models by AIC value
+model_comparison_sorted <- model_comparison %>% 
+  arrange(AIC)
+
+# View the sorted data frame
+model_comparison_sorted %>% 
+  view()
+
+# Calculate the minimum AIC value among all models
+min_aic <- min(model_comparison_sorted$AIC)
+
+# Add a column for Delta AIC
+model_comparison_sorted <- model_comparison_sorted %>%
+  mutate(Delta_AIC = AIC - min_aic)
+
+# View the updated data frame
+model_comparison_sorted %>% view()
+```
+
+Cross validating top model (binomial)
+```{r}
+
+# Partitioning data into training (80% ) and testing sets 
+set.seed(123)
+trainIndex <- createDataPartition(summer2022_locs_veg_data_perc_burned_modified$percent_in_burned, p = .8, list = FALSE)
+trainData <- summer2022_locs_veg_data_perc_burned_modified[trainIndex,]
+testData  <- summer2022_locs_veg_data_perc_burned_modified[-trainIndex,]
+
+# Example code for fitting a binomial model on training data
+fit_binomial <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~ pg + ps + hg + hs + DSF,
+                    data = trainData, family = binomial, na.action = na.pass)
+
+# k-fold cross-validation (e.g., 10-fold)
+ctrl <- trainControl(method = "cv", number = 10)
+
+train_binomial <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
+                     pg +
+                     ps +  
+                     hg + 
+                     hs +
+                     DSF,
+                     family = binomial, data = trainData, na.action = "na.pass")
+
+
+testData_new <- testData[,c("pg","ps","hg","hs","DSF")]
+# Evaluating the model on the test set, creating a confusion matrix
+predictions <- predict(train_binomial, newdata = testData, type = "response")
+
+
+
+
+
+plot(predictions - (testData$birds_in_burned_areas)/testData$birds_online)
+mtext("Binomial: Predictions - Observed values", outer = TRUE, line = -1, cex = 1.5)
+
+mean_binomial <- mean(predictions - (testData$birds_in_burned_areas)/testData$birds_online)
+```
+
+```{r}
+# Partitioning data into training (80% ) and testing sets 
+set.seed(123)
+trainIndex <- createDataPartition(summer2022_locs_veg_data_perc_burned_modified$percent_in_burned, p = .8, list = FALSE)
+trainData <- summer2022_locs_veg_data_perc_burned_modified[trainIndex,]
+testData  <- summer2022_locs_veg_data_perc_burned_modified[-trainIndex,]
+
+# Example code for fitting a binomial model on training data
+fit_beta <- betareg(percent_in_burned ~  hg + pf + hs + DSF,
+                    data = trainData, na.action = na.pass)
+
+# k-fold cross-validation (e.g., 10-fold)
+ctrl <- trainControl(method = "cv", number = 10)
+
+train_beta <- betareg(percent_in_burned ~
+                     hg +
+                     pf +
+                     hs +
+                     DSF,
+                     data = trainData,
+                     na.action = "na.pass")
+
+
+
+testData_new <- testData[,c("pg","ps","hg","hs","DSF")]
+# Evaluating the model on the test set, creating a confusion matrix
+predictions <- predict(train_beta, newdata = testData, type = "response")
+
+
+plot(predictions - (testData$birds_in_burned_areas)/testData$birds_online)
+mtext("Beta: Predictions - Observed values", outer = TRUE, line = -1, cex = 1.5)
+
+mean_beta <- mean(predictions - (testData$birds_in_burned_areas)/testData$birds_online)
+
+```
+
+```{r}
+library(caret)
+
+set.seed(123)
+trainIndex <- createDataPartition(summer2022_locs_veg_data_perc_burned_modified$percent_in_burned, p = .8, list = FALSE)
+trainData <- summer2022_locs_veg_data_perc_burned_modified[trainIndex,]
+testData  <- summer2022_locs_veg_data_perc_burned_modified[-trainIndex,]
+
+as.numeric(caret::RMSE(summer2022_locs_veg_data_perc_burned_modified$percent_in_burned, predict(model34, newdata = testData)))
+
+```
+
