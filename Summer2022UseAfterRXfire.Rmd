@@ -233,7 +233,7 @@ cor(veg_only)
 
 #After centering and scaling
 csveg <- s22rx_sc %>%
-  select(ps:hs)
+  select(pg:hs)
 
 cor(csveg)
 ```
@@ -243,51 +243,37 @@ Candidate models w beta distribution (post MCM meeting)
 ```{r}
 #### Beta candidate models with beta distribution (post meeting) ####
 #Global model
-model1 <- betareg(pib ~
-                     pg +
-                     pf +
-                     ps +    
-                     hg + 
-                     hf +
-                     DSF,
+model1 <- betareg(pib ~ pg + pf + ps + hg + hf + DSF,
                      data = s22rx_sc,
                      na.action = "na.pass")
 
 
-model2 <- betareg(pib ~
-                    DSF, 
+model2 <- betareg(pib ~ DSF, 
                   data = s22rx_sc,
                   na.action = "na.pass")
 
-model3<- betareg(pib ~
-                    DSF +
-                    I(DSF^2), 
+model3<- betareg(pib ~ DSF + I(DSF^2), 
                   data = s22rx_sc,
                   na.action = "na.pass")
 
-model4 <- betareg(pib ~
-                    pg + pf + ps,
+model4 <- betareg(pib ~ pg + pf + ps,
                   data = s22rx_sc,
                   na.action = "na.pass")
 
-model5 <- betareg(pib ~
-                    hg + hf + hs,
+model5 <- betareg(pib ~ hg + hf + hs,
                   data = s22rx_sc,
                   na.action = "na.pass")
 
 
-model6 <- betareg(pib ~
-                    pg + hg + pf + hg,
+model6 <- betareg(pib ~ pg + hg + pf + hg,
                   data = s22rx_sc,
                   na.action = "na.pass")
 
-model7 <- betareg(pib ~
-                  ps,
+model7 <- betareg(pib ~ ps,
                   data = s22rx_sc,
                   na.action = "na.pass")
 
-model8 <- betareg(pib ~
-                  1,
+model8 <- betareg(pib ~ 1,
                   data = s22rx_sc,
                   na.action = "na.pass")
 ```
@@ -332,6 +318,7 @@ model_comparison_sorted$weight <- model_comparison_sorted$rll/sum(model_comparis
 model_comparison_sorted$weight <- round(model_comparison_sorted$weight,3)
 
 model_comparison_sorted %>% view()
+write_xlsx(model_comparison_sorted, "/Users/jeffgrayum/Downloads/model_comparison.xlsx")
 ```
 
 Making plots: Veg metrics vs percent in burned
@@ -436,14 +423,29 @@ hgdf <- data.frame(
   hs = rep(mean_hs, length(hg_values))
 )
 
-# Generate predictions
-pib_hg <- predict(model5, newdata = hgdf, type = "response")
+# Generating predictions and variance of predictions.
+hg_mean <- betareg::predict(model5, newdata = hgdf, type = "response")
+hg_var <- betareg::predict(model5, newdata = hgdf, type = "variance")
 
-# Plotting
-plot(hg_values, pib_hg, type = "l", 
-     xlab = "Height of grasses", ylab = "Predicted % in burned areas",
-     main = "Predicted % in burned areas vs height of grasses")
+# Creating a new data frame with the calculated mean and variance
+hg_results_df <- data.frame(
+  hg_mean = hg_mean,
+  hg_variance = hg_var
+)
 
+hg_results_df$lowCI = (hg_results_df$hg_mean - (1.96 * sqrt(hg_results_df$hg_variance)))
+hg_results_df$upperCI = (hg_results_df$hg_mean + (1.96 * sqrt(hg_results_df$hg_variance)))
+
+hg_results_df %>% view()
+
+hg_results_df %>% 
+  ggplot(aes(hg_values, hg_mean)) +
+  geom_line() +
+  geom_ribbon(aes(ymin = lowCI, ymax = upperCI), fill = "blue", alpha = 0.1) +
+  labs(x = "Height of grasses (cm)",
+       y = "Predicted % NOBO in burned areas",
+       title = "Predicted % NOBO in burned areas vs height of grasses") +
+  scale_y_continuous(labels = percent)
 
 #Now, we will do hf.
 # Generate a sequence of hf values, between min and max.
@@ -460,13 +462,26 @@ hfdf <- data.frame(
 )
 
 # Generate predictions
-pib_hf <- predict(model5, newdata = hfdf, type = "response")
+hf_mean <- predict(model5, newdata = hfdf, type = "response")
+hf_var <- predict(model5, newdata = hfdf, type = "variance")
+
+hf_results_df <- data.frame(
+  hf_mean = hf_mean,
+  hf_var = hf_var
+)
+
+hf_results_df$lowCI = (hf_results_df$hf_mean - (1.96 * sqrt(hf_results_df$hf_var)))
+hf_results_df$upperCI = (hf_results_df$hf_mean + (1.96 * sqrt(hf_results_df$hf_var)))
 
 # Plotting
-plot(hf_values, pib_hf, type = "l", 
-     xlab = "Height of forbs", ylab = "Predicted % in burned areas",
-     main = "Predicted % in burned areas vs height of forbs")
-
+hf_results_df %>% 
+  ggplot(aes(hf_values, hf_mean)) +
+  geom_line() +
+  geom_ribbon(aes(ymin = lowCI, ymax = upperCI), fill = "blue", alpha = 0.1) +
+  labs(x = "Height of forbs (cm)",
+       y = "Predicted % NOBO in burned areas",
+       title = "Predicted % NOBO in burned areas vs height of forbs") +
+  scale_y_continuous(labels = percent)
 
 #Now, we will do hs.
 # Generate a sequence of hf values, between min and max.
@@ -483,19 +498,62 @@ hsdf <- data.frame(
 
 
 # Generate predictions
-pib_hs <- predict(model5, newdata = hsdf, type = "response")
+hs_mean <- predict(model5, newdata = hsdf, type = "response")
+hs_var <- predict(model5, newdata = hsdf, type = "variance")
+
+#Creating new dataframe with hs mean predictions, and variance
+hs_results_df <- data.frame(
+  hs_mean = hs_mean,
+  hs_var = hs_var
+)
+
+#Calculating upper and lower confidence intervals
+hs_results_df$lowCI = (hs_results_df$hs_mean - (1.96 * sqrt(hs_results_df$hs_var)))
+hs_results_df$upperCI = (hs_results_df$hs_mean + (1.96 * sqrt(hs_results_df$hs_var)))
+
 
 # Plotting
-plot(hs_values, pib_hs, type = "l", 
-     xlab = "Height of shrubs", ylab = "Predicted % in burned areas",
-     main = "Predicted % in burned areas vs height of shrubs")
-
-
+hs_results_df %>% 
+  ggplot(aes(hs_values, hs_mean)) +
+  geom_line() +
+  geom_ribbon(aes(ymin = lowCI, ymax = upperCI), fill = "blue", alpha = 0.1) +
+  labs(x = "Height of shrubs (cm)",
+       y = "Predicted % NOBO in burned areas",
+       title = "Predicted % NOBO in burned areas vs height of shrubs") +
+  scale_y_continuous(labels = percent)
 
 
 ```
 
+```{r}
+# Load the 'boot' library for bootstrapping
+library(boot)
 
+# Define a function to get betareg model predictions
+boot_fn <- function(data, indices) {
+  sample_data <- data[indices, ]
+  mod <- betareg(percent_in_burned ~ hg + hf + hs, data = sample_data)
+  return(predict(mod, newdata = hgdf))
+}
+
+# Create bootstrapped confidence intervals for hg
+hg_boot <- boot(data = summer_locs_veg_data_perc_burned_modified, statistic = boot_fn, R = 1000)
+hg_ci <- boot.ci(hg_boot, conf = 0.95, type = "perc")
+
+# Calculate upper and lower bounds for hg
+upr_hg <- hg_ci$percent[4]
+lwr_hg <- hg_ci$percent[3]
+
+# Plot for hg
+plot(hg_values, pib_hg, type = "l", 
+     xlab = "Height of grasses", ylab = "Predicted % in burned areas",
+     main = "Predicted % in burned areas vs height of grasses")
+lines(hg_values, upr_hg, col = "red", lty = 2)
+lines(hg_values, lwr_hg, col = "red", lty = 2)
+
+# Repeat the bootstrapping process for hf and hs (not shown here, but follow the same logic)
+
+```
 
 Old Beta Models (too much like dredge... minimal ecological difference between models.)
 ```{r}
