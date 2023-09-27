@@ -31,6 +31,8 @@ library(broom)
 library(caret)
 library(janitor)
 library(performance)
+library(gam)
+library(mgcv)
 theme_set(theme_minimal())
 ```
 
@@ -56,6 +58,9 @@ summer2022_locs_veg_data <- summer2022_locs_veg_data %>%
               dplyr::select(band_numb, age, sex), 
             by = "band_numb")
 
+veg_data_2022 <- read_xlsx("/Volumes/Samsung_T5/BOBWHITE_DATA/Clean/VegSurveys/VegSurveys2022.xlsx") %>%
+  clean_names()
+
 ```
 
 Determining proportion of birds in burn areas each day.
@@ -65,7 +70,7 @@ Determining proportion of birds in burn areas each day.
 birds_in_burned_areas <- summer2022_locs_veg_data %>%
   dplyr::filter(burned == 1) %>%
   group_by(date) %>%
-  summarize(birds_in_burned_areas = n())
+  summarize(birds_in_burned_areas = n_distinct(band_numb))
 
 
 # Joining into summer locs data
@@ -223,7 +228,6 @@ s22rx_sc <- s22rx %>%
 Checking for correlations 
 ```{r}
 #### Checking for correlations ####
-
 veg_only <- read_xlsx("/Volumes/Samsung_T5/BOBWHITE_DATA/Clean/VegSurveys/VegSurveys2022.xlsx") %>% 
   clean_names %>%
   select(percent_grasses:max_shrubs_cm)
@@ -239,7 +243,7 @@ cor(csveg)
 ```
 
 
-Candidate models w beta distribution (post MCM meeting)
+Candidate models w beta distribution (post MDM meeting)
 ```{r}
 #### Beta candidate models with beta distribution (post meeting) ####
 #Global model
@@ -276,11 +280,12 @@ model7 <- betareg(pib ~ ps,
 model8 <- betareg(pib ~ 1,
                   data = s22rx_sc,
                   na.action = "na.pass")
+
 ```
 
 Ranking candidate models
 ```{r}
-#### ranking beta models (post meeting) ####
+#### ranking beta candidate models (post meeting) ####
 # Creating a data frame to store model names and their AIC values
 model_names <- c(paste0("model", 1:8))
 
@@ -318,10 +323,102 @@ model_comparison_sorted$weight <- model_comparison_sorted$rll/sum(model_comparis
 model_comparison_sorted$weight <- round(model_comparison_sorted$weight,3)
 
 model_comparison_sorted %>% view()
-write_xlsx(model_comparison_sorted, "/Users/jeffgrayum/Downloads/model_comparison.xlsx")
+#write_xlsx(model_comparison_sorted, "/Users/jeffgrayum/Downloads/model_comparison.xlsx")
+
+plot(model5, which = 1:4, type = "pearson")
 ```
 
-Making plots: Veg metrics vs percent in burned
+
+Candidate models (GAM)
+```{r}
+#### Candidate models (GAM) #### 
+
+gmodel1 <- gam(pib ~ pg + pf + ps + hg + hf + DSF,
+                     data = s22rx_sc,
+                     family=betar(link = "logit"),
+                     na.action = "na.pass")
+
+
+gmodel2 <- gam(pib ~ DSF, 
+                  data = s22rx_sc,
+                  family = betar(link = "logit"),
+                  na.action = "na.pass")
+
+gmodel3 <- gam(pib ~ DSF + I(DSF^2), 
+                  data = s22rx_sc,
+                  family = betar(link = "logit"),
+                  na.action = "na.pass")
+
+gmodel4 <- gam(pib ~ pg + pf + ps,
+                  data = s22rx_sc,
+                  family = betar(link = "logit"),
+                  na.action = "na.pass")
+
+gmodel5 <- gam(pib ~ hg + hf + hs,
+                  family = betar(link = "logit"),
+                  data = s22rx_sc,
+                  na.action = "na.pass")
+
+
+gmodel6 <- gam(pib ~ pg + hg + pf + hg,
+                  family = betar(link = "logit"),
+                  data = s22rx_sc,
+                  na.action = "na.pass")
+
+gmodel7 <- gam(pib ~ ps,
+                   family = betar(link = "logit"),
+                  data = s22rx_sc,
+                  na.action = "na.pass")
+
+gmodel8 <- gam(pib ~ 1,
+                  family = betar(link = "logit"),
+                  data = s22rx_sc,
+                  na.action = "na.pass")
+```
+
+```{r}
+ #### Ranking gam models ####
+# Creating a data frame to store model names and their AIC values
+model_names <- c(paste0("gmodel", 1:8))
+
+
+model_list <- list(gmodel1, gmodel2, gmodel3, gmodel4,
+                   gmodel5, gmodel6, gmodel7, gmodel8)
+
+
+model_aic <- sapply(model_list, AIC)
+model_nll <- sapply(model_list, logLik)
+
+# Combine the model names and AIC values into a data frame
+model_comparison <- data.frame(Model = model_names, AIC = model_aic, nll = - model_nll)
+
+# Sort the models by AIC value
+model_comparison_sorted <- model_comparison %>% 
+  arrange(AIC)
+
+# View the sorted data frame
+model_comparison_sorted %>% 
+  view()
+
+# Calculate the minimum AIC value among all models
+min_aic <- min(model_comparison_sorted$AIC)
+
+# Add a column for Delta AIC
+model_comparison_sorted <- model_comparison_sorted %>%
+  mutate(Delta_AIC = AIC - min_aic)
+
+# View the updated data frame
+model_comparison_sorted %>% view()
+
+model_comparison_sorted$rll <- exp(-0.5*model_comparison_sorted$Delta_AIC)
+model_comparison_sorted$weight <- model_comparison_sorted$rll/sum(model_comparison_sorted$rll)
+model_comparison_sorted$weight <- round(model_comparison_sorted$weight,3)
+
+model_comparison_sorted %>% view
+
+
+```
+
 ```{r}
 #### Plotting veg data vs percent in burned ####
 s22rx_piv <- s22rx %>%
@@ -403,16 +500,16 @@ Making predict plots with top model
 ```{r}
 #### Making predict plots ####
 
-#first, we will calculate the mean values for hg, hf, and hs. These will be held constant when making predict plots
-mean_hg <- mean(veg_data_2022$max_grasses_cm)
-mean_hf <- mean(veg_data_2022$max_forbs_cm)
-mean_hs <- mean(veg_data_2022$max_shrubs_cm)
+#First, we will calculate the mean values for hg, hf, and hs. Two of these will be held constant when making predict plots for other covariate.
+mean_hg <- mean(s22rx_sc$hg)
+mean_hf <- mean(s22rx_sc$hf)
+mean_hs <- mean(s22rx_sc$hs)
 
 #First we will do height of grasses. We need to create a new data frame with sequence of grass height(between min a max), and the mean values of hf and hs.
 
 # Generate a sequence of hg values, between min and max.
-hg_values <- seq(min(s22rx$hg, na.rm = TRUE), 
-                 max(s22rx$hg, na.rm = TRUE), 
+hg_values <- seq(min(s22rx_sc$hg, na.rm = TRUE), 
+                 max(s22rx_sc$hg, na.rm = TRUE), 
                  length.out = 1000) 
 
 
@@ -424,37 +521,32 @@ hgdf <- data.frame(
 )
 
 # Generating predictions and variance of predictions.
-hg_mean <- betareg::predict(model5, newdata = hgdf, type = "response")
-hg_var <- betareg::predict(model5, newdata = hgdf, type = "variance")
+hg_pred <- data.frame(predict(model5, newdata = hgdf, type = "response", se.fit = TRUE))
 
-# Creating a new data frame with the calculated mean and variance
-hg_results_df <- data.frame(
-  hg_mean = hg_mean,
-  hg_variance = hg_var
-)
+hg_pred$hg_values <- hg_values
 
-hg_results_df$lowCI = (hg_results_df$hg_mean - (1.96 * sqrt(hg_results_df$hg_variance)))
-hg_results_df$upperCI = (hg_results_df$hg_mean + (1.96 * sqrt(hg_results_df$hg_variance)))
+#head(hg_pred)
 
-hg_results_df %>% view()
+hg_pred$lowCI = (hg_pred$fit - (1.96 * hg_pred$se.fit))
+hg_pred$upperCI = (hg_pred$fit + (1.96 * hg_pred$se.fit))
 
-hg_results_df %>% 
-  ggplot(aes(hg_values, hg_mean)) +
+hg_pred %>%
+  ggplot(aes(hg_values, fit)) +
   geom_line() +
   geom_ribbon(aes(ymin = lowCI, ymax = upperCI), fill = "blue", alpha = 0.1) +
-  labs(x = "Height of grasses (cm)",
+  labs(x = "Height of grasses (centered and scaled)",
        y = "Predicted % NOBO in burned areas",
        title = "Predicted % NOBO in burned areas vs height of grasses") +
   scale_y_continuous(labels = percent)
 
 #Now, we will do hf.
-# Generate a sequence of hf values, between min and max.
-hf_values <- seq(min(s22rx$hf, na.rm = TRUE), 
-                 max(s22rx$hf, na.rm = TRUE), 
-                 length.out = 1000) 
+#Generate a sequence of hf values, between min and max.
+hf_values <- seq(min(s22rx_sc$hf, na.rm = TRUE), 
+                 max(s22rx_sc$hf, na.rm = TRUE), 
+                 length.out = 300) 
 
 
-# we must create a data frame with the hg values, and the mean hf and hs values
+#We must create a data frame with the hg values, and the mean hf and hs values
 hfdf <- data.frame(
   hg = rep(mean_hg, length(hf_values)), 
   hf = hf_values, 
@@ -462,32 +554,65 @@ hfdf <- data.frame(
 )
 
 # Generate predictions
-hf_mean <- predict(model5, newdata = hfdf, type = "response")
-hf_var <- predict(model5, newdata = hfdf, type = "variance")
+hf_pred <- data.frame(predict(model5, newdata = hfdf, type = "response", se.fit = TRUE))
 
-hf_results_df <- data.frame(
-  hf_mean = hf_mean,
-  hf_var = hf_var
-)
+hf_pred$hf_values <- hf_values
 
-hf_results_df$lowCI = (hf_results_df$hf_mean - (1.96 * sqrt(hf_results_df$hf_var)))
-hf_results_df$upperCI = (hf_results_df$hf_mean + (1.96 * sqrt(hf_results_df$hf_var)))
+hf_pred$lowCI = (hf_pred$fit - (1.96 * hf_pred$se.fit))
+hf_pred$upperCI = (hf_pred$fit + (1.96 * hf_pred$se.fit))
 
 # Plotting
-hf_results_df %>% 
-  ggplot(aes(hf_values, hf_mean)) +
+hf_pred%>% 
+  ggplot(aes(hf_values, fit)) +
   geom_line() +
   geom_ribbon(aes(ymin = lowCI, ymax = upperCI), fill = "blue", alpha = 0.1) +
-  labs(x = "Height of forbs (cm)",
+  labs(x = "Height of forbs (centered and scaled)",
        y = "Predicted % NOBO in burned areas",
        title = "Predicted % NOBO in burned areas vs height of forbs") +
   scale_y_continuous(labels = percent)
 
+
+
 #Now, we will do hs.
 # Generate a sequence of hf values, between min and max.
-hs_values <- seq(min(s22rx$hs, na.rm = TRUE), 
-                 max(s22rx$hs, na.rm = TRUE), 
+hs_values <- seq(min(s22rx_sc$hs, na.rm = TRUE), 
+                 max(s22rx_sc$hs, na.rm = TRUE), 
                  length.out = 1000) 
+
+
+# we must create a data frame with the hg values, and the mean hf and hs values
+hsdf <- data.frame(
+  hg = rep(mean_hg, length(hs_values)), 
+  hf = rep(mean_hf, length(hs_values)), 
+  hs = hs_values)
+
+
+# Generate predictions
+hs_pred <- data.frame(predict(model5, newdata = hsdf, type = "response", se.fit = TRUE))
+
+
+#Calculating upper and lower confidence intervals
+hs_pred$lowCI = (hs_pred$fit - (1.96 * hs_pred$se.fit))
+hs_pred$upperCI = (hs_pred$fit + (1.96 * hs_pred$se.fit))
+
+
+# Plotting
+hs_pred%>% 
+  ggplot(aes(hs_values, fit)) +
+  geom_line() +
+  geom_ribbon(aes(ymin = lowCI, ymax = upperCI), fill = "blue", alpha = 0.1) +
+  labs(x = "Height of shrubs (centered and scaled)",
+       y = "Predicted % NOBO in burned areas",
+       title = "Predicted % NOBO in burned areas vs height of shrubs") +
+  scale_y_continuous(labels = percent)
+
+
+
+#Now, we will do hs.
+# Generate a sequence of hf values, between min and max.
+hs_values <- seq(min(s22rx_sc$hs, na.rm = TRUE), 
+                 max(s22rx_sc$hs, na.rm = TRUE), 
+                 length.out = 300) 
 
 
 # we must create a data frame with the hg values, and the mean hf and hs values
@@ -501,6 +626,8 @@ hsdf <- data.frame(
 hs_mean <- predict(model5, newdata = hsdf, type = "response")
 hs_var <- predict(model5, newdata = hsdf, type = "variance")
 
+head(hs_mean)
+
 #Creating new dataframe with hs mean predictions, and variance
 hs_results_df <- data.frame(
   hs_mean = hs_mean,
@@ -511,13 +638,14 @@ hs_results_df <- data.frame(
 hs_results_df$lowCI = (hs_results_df$hs_mean - (1.96 * sqrt(hs_results_df$hs_var)))
 hs_results_df$upperCI = (hs_results_df$hs_mean + (1.96 * sqrt(hs_results_df$hs_var)))
 
+head(hs_results_df)
 
 # Plotting
 hs_results_df %>% 
   ggplot(aes(hs_values, hs_mean)) +
   geom_line() +
   geom_ribbon(aes(ymin = lowCI, ymax = upperCI), fill = "blue", alpha = 0.1) +
-  labs(x = "Height of shrubs (cm)",
+  labs(x = "Height of shrubs (centered and scaled)",
        y = "Predicted % NOBO in burned areas",
        title = "Predicted % NOBO in burned areas vs height of shrubs") +
   scale_y_continuous(labels = percent)
@@ -525,35 +653,6 @@ hs_results_df %>%
 
 ```
 
-```{r}
-# Load the 'boot' library for bootstrapping
-library(boot)
-
-# Define a function to get betareg model predictions
-boot_fn <- function(data, indices) {
-  sample_data <- data[indices, ]
-  mod <- betareg(percent_in_burned ~ hg + hf + hs, data = sample_data)
-  return(predict(mod, newdata = hgdf))
-}
-
-# Create bootstrapped confidence intervals for hg
-hg_boot <- boot(data = summer_locs_veg_data_perc_burned_modified, statistic = boot_fn, R = 1000)
-hg_ci <- boot.ci(hg_boot, conf = 0.95, type = "perc")
-
-# Calculate upper and lower bounds for hg
-upr_hg <- hg_ci$percent[4]
-lwr_hg <- hg_ci$percent[3]
-
-# Plot for hg
-plot(hg_values, pib_hg, type = "l", 
-     xlab = "Height of grasses", ylab = "Predicted % in burned areas",
-     main = "Predicted % in burned areas vs height of grasses")
-lines(hg_values, upr_hg, col = "red", lty = 2)
-lines(hg_values, lwr_hg, col = "red", lty = 2)
-
-# Repeat the bootstrapping process for hf and hs (not shown here, but follow the same logic)
-
-```
 
 Old Beta Models (too much like dredge... minimal ecological difference between models.)
 ```{r}
