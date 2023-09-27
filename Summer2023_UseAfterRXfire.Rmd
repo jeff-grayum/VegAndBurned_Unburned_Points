@@ -1,0 +1,353 @@
+---
+title: "Summer2023_UseAfterRXfire"
+output: html_document
+date: "2023-09-27"
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+#### Libraries ####
+
+library(janitor)
+library(tidyverse)
+library(ggthemes)
+library(lubridate)
+library(lme4)
+library(readxl)
+library(writexl)
+library(sf)
+library(MuMIn)
+library(scales)
+library(sjPlot)
+library(rsq)
+library(betareg)
+library(broom)
+library(caret)
+library(janitor)
+library(performance)
+library(gam)
+library(mgcv)
+theme_set(theme_minimal())
+```
+
+Importing data. Veg metrics and percent burned already added in 2023 Burned Unburned Locs Veg .rmd
+```{r}
+#### Importing data ####
+s23rx <- read_xlsx("/Volumes/Samsung_T5/BOBWHITE_DATA/Clean/SummerLocations/Summer2023/s23rx.xlsx") %>%
+  rename(pg = perc_grasses,
+         pf = perc_forbs,
+         ps = perc_shrubs,
+         hg = height_grasses,
+         hf = height_forbs,
+         hs = height_shrubs,
+         pib = percent_in_burned)
+```
+
+Plotting use over time
+```{r}
+#### Plotting use over time ####
+
+s23rx %>%
+  dplyr::filter(date <= "2023-08-04") %>%
+  ggplot(aes(dsf, pib)) +
+  geom_point() +
+  labs(title = "2023: Use of burned areas following prescribed fire",
+       x = "DSF",
+       y = "% in burned")
+
+
+```
+
+Centering and scaling veg covariates
+```{r}
+s23rx_sc <- s23rx %>% 
+  mutate_at(vars(pg:hs), .funs = function(x){as.numeric(scale(x, center = T))}) %>%
+  mutate(pib = pib + 0.00001)
+```
+
+Candidate models (betareg)
+```{r}
+#### Candidate models with betareg (post meeting) ####
+#Global model
+bmodel1 <- betareg(pib ~ pg + pf + ps + hg + hf + dsf,
+                     data = s23rx_sc,
+                     na.action = "na.pass")
+
+
+bmodel2 <- betareg(pib ~ dsf, 
+                  data = s23rx_sc,
+                  na.action = "na.pass")
+
+bmodel3<- betareg(pib ~ dsf + I(dsf^2), 
+                  data = s23rx_sc,
+                  na.action = "na.pass")
+
+bmodel4 <- betareg(pib ~ pg + pf + ps,
+                  data = s23rx_sc,
+                  na.action = "na.pass")
+
+bmodel5 <- betareg(pib ~ hg + hf + hs,
+                  data = s23rx_sc,
+                  na.action = "na.pass")
+
+
+bmodel6 <- betareg(pib ~ pg + hg + pf + hg,
+                  data = s23rx_sc,
+                  na.action = "na.pass")
+
+bmodel7 <- betareg(pib ~ ps,
+                  data = s23rx_sc,
+                  na.action = "na.pass")
+
+bmodel8 <- betareg(pib ~ 1,
+                  data = s23rx_sc,
+                  na.action = "na.pass")
+
+```
+
+Ranking candidate models (betareg)
+```{r}
+
+#### Ranking betareg models ####
+# Creating a data frame to store model names and their AIC values
+model_names <- c(paste0("bmodel", 1:8))
+
+
+model_list <- list(bmodel1, bmodel2, bmodel3, bmodel4,
+                   bmodel5, bmodel6, bmodel7, bmodel8)
+
+
+model_aic <- sapply(model_list, AIC)
+model_nll <- sapply(model_list, logLik)
+
+# Combine the model names and AIC values into a data frame
+model_comparison <- data.frame(Model = model_names, AIC = model_aic, nll = - model_nll)
+
+# Sort the models by AIC value
+model_comparison_sorted <- model_comparison %>% 
+  arrange(AIC)
+
+# View the sorted data frame
+model_comparison_sorted %>% 
+  view()
+
+# Calculate the minimum AIC value among all models
+min_aic <- min(model_comparison_sorted$AIC)
+
+# Add a column for Delta AIC
+model_comparison_sorted <- model_comparison_sorted %>%
+  mutate(Delta_AIC = AIC - min_aic)
+
+# View the updated data frame
+model_comparison_sorted %>% view()
+
+model_comparison_sorted$rll <- exp(-0.5*model_comparison_sorted$Delta_AIC)
+model_comparison_sorted$weight <- model_comparison_sorted$rll/sum(model_comparison_sorted$rll)
+model_comparison_sorted$weight <- round(model_comparison_sorted$weight,3)
+
+model_comparison_sorted %>% view
+```
+
+Candidate models (GAM)
+```{r}
+#### Candidate models (GAM) 2023 #### 
+
+gmodel1 <- gam(pib ~ pg + pf + ps + hg + hf + dsf,
+                     data = s23rx_sc,
+                     family=betar(link = "logit"),
+                     na.action = "na.pass")
+
+
+gmodel2 <- gam(pib ~ dsf, 
+                  data = s23rx_sc,
+                  family = betar(link = "logit"),
+                  na.action = "na.pass")
+
+gmodel3 <- gam(pib ~ dsf + I(dsf^2), 
+                  data = s23rx_sc,
+                  family = betar(link = "logit"),
+                  na.action = "na.pass")
+
+gmodel4 <- gam(pib ~ pg + pf + ps,
+                  data = s23rx_sc,
+                  family = betar(link = "logit"),
+                  na.action = "na.pass")
+
+gmodel5 <- gam(pib ~ hg + hf + hs,
+                  family = betar(link = "logit"),
+                  data = s23rx_sc,
+                  na.action = "na.pass")
+
+
+gmodel6 <- gam(pib ~ pg + hg + pf + hg,
+                  family = betar(link = "logit"),
+                  data = s23rx_sc,
+                  na.action = "na.pass")
+
+gmodel7 <- gam(pib ~ ps,
+                   family = betar(link = "logit"),
+                  data = s23rx_sc,
+                  na.action = "na.pass")
+
+gmodel8 <- gam(pib ~ 1,
+                  family = betar(link = "logit"),
+                  data = s23rx_sc,
+                  na.action = "na.pass")
+```
+
+
+Ranking candidate models (gam)
+```{r}
+
+#### Ranking ga models ####
+# Creating a data frame to store model names and their AIC values
+model_names <- c(paste0("gmodel", 1:8))
+
+
+model_list <- list(gmodel1, gmodel2, gmodel3, gmodel4,
+                   gmodel5, gmodel6, gmodel7, gmodel8)
+
+
+model_aic <- sapply(model_list, AIC)
+model_nll <- sapply(model_list, logLik)
+
+# Combine the model names and AIC values into a data frame
+model_comparison <- data.frame(Model = model_names, AIC = model_aic, nll = - model_nll)
+
+# Sort the models by AIC value
+model_comparison_sorted <- model_comparison %>% 
+  arrange(AIC)
+
+# View the sorted data frame
+model_comparison_sorted %>% 
+  view()
+
+# Calculate the minimum AIC value among all models
+min_aic <- min(model_comparison_sorted$AIC)
+
+# Add a column for Delta AIC
+model_comparison_sorted <- model_comparison_sorted %>%
+  mutate(Delta_AIC = AIC - min_aic)
+
+# View the updated data frame
+model_comparison_sorted %>% view()
+
+model_comparison_sorted$rll <- exp(-0.5*model_comparison_sorted$Delta_AIC)
+model_comparison_sorted$weight <- model_comparison_sorted$rll/sum(model_comparison_sorted$rll)
+model_comparison_sorted$weight <- round(model_comparison_sorted$weight,3)
+
+model_comparison_sorted %>% view
+```
+
+Lets try combining 2023/23 data
+```{r}
+s22_select <- s22rx_sc %>%
+  select(DSF, pg:hs, pib)
+
+s22_select <- s22_select %>%
+  rename(dsf = DSF)
+
+s23_select <- s23rx_sc %>%
+  select(dsf, pg:hs, pib)
+
+s22_23_rx <- rbind(
+  s22_select, s23_select
+)
+```
+
+Candidate models (GAM) 2022/23
+```{r}
+#### Candidate models (GAM)  FOR BOTH YEARS #### 
+
+gmodel1 <- gam(pib ~ pg + pf + ps + hg + hf + dsf,
+                     data = s22_23_rx,
+                     family=betar(link = "logit"),
+                     na.action = "na.pass")
+
+
+gmodel2 <- gam(pib ~ dsf, 
+                  data = s22_23_rx,
+                  family = betar(link = "logit"),
+                  na.action = "na.pass")
+
+gmodel3 <- gam(pib ~ dsf + I(dsf^2), 
+                  data = s22_23_rx,
+                  family = betar(link = "logit"),
+                  na.action = "na.pass")
+
+gmodel4 <- gam(pib ~ pg + pf + ps,
+                  data = s22_23_rx,
+                  family = betar(link = "logit"),
+                  na.action = "na.pass")
+
+gmodel5 <- gam(pib ~ hg + hf + hs,
+                  family = betar(link = "logit"),
+                  data = s22_23_rx,
+                  na.action = "na.pass")
+
+
+gmodel6 <- gam(pib ~ pg + hg + pf + hg,
+                  family = betar(link = "logit"),
+                  data = s22_23_rx,
+                  na.action = "na.pass")
+
+gmodel7 <- gam(pib ~ ps,
+                   family = betar(link = "logit"),
+                  data = s22_23_rx,
+                  na.action = "na.pass")
+
+gmodel8 <- gam(pib ~ 1,
+                  family = betar(link = "logit"),
+                  data = s22_23_rx,
+                  na.action = "na.pass")
+```
+
+
+Ranking candidate models (gam)
+```{r}
+
+#### Ranking gam models 2022/23 ####
+# Creating a data frame to store model names and their AIC values
+model_names <- c(paste0("gmodel", 1:8))
+
+
+model_list <- list(gmodel1, gmodel2, gmodel3, gmodel4,
+                   gmodel5, gmodel6, gmodel7, gmodel8)
+
+
+model_aic <- sapply(model_list, AIC)
+model_nll <- sapply(model_list, logLik)
+
+# Combine the model names and AIC values into a data frame
+model_comparison <- data.frame(Model = model_names, AIC = model_aic, nll = - model_nll)
+
+# Sort the models by AIC value
+model_comparison_sorted <- model_comparison %>% 
+  arrange(AIC)
+
+# View the sorted data frame
+model_comparison_sorted %>% 
+  view()
+
+# Calculate the minimum AIC value among all models
+min_aic <- min(model_comparison_sorted$AIC)
+
+# Add a column for Delta AIC
+model_comparison_sorted <- model_comparison_sorted %>%
+  mutate(Delta_AIC = AIC - min_aic)
+
+# View the updated data frame
+model_comparison_sorted %>% view()
+
+model_comparison_sorted$rll <- exp(-0.5*model_comparison_sorted$Delta_AIC)
+model_comparison_sorted$weight <- model_comparison_sorted$rll/sum(model_comparison_sorted$rll)
+model_comparison_sorted$weight <- round(model_comparison_sorted$weight,3)
+
+model_comparison_sorted %>% view
+```
