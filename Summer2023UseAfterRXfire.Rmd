@@ -1,0 +1,179 @@
+---
+title: "Summer2023UseAfterFire"
+output: html_document
+date: "2023-09-26"
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+#### Libraries ####
+
+library(janitor)
+library(tidyverse)
+library(ggthemes)
+library(lubridate)
+library(lme4)
+library(readxl)
+library(writexl)
+library(sf)
+library(MuMIn)
+library(scales)
+library(sjPlot)
+library(rsq)
+library(betareg)
+library(broom)
+library(caret)
+library(janitor)
+library(performance)
+library(gam)
+library(mgcv)
+theme_set(theme_minimal())
+```
+
+Importing data sets
+```{r}
+#### Importing veg data  and locations ####
+
+#Veg data
+veg_data_2023 <- read_xlsx("/Volumes/Samsung_T5/BOBWHITE_DATA/Clean/VegSurveys/VegSurveys2023.xlsx") %>%
+  clean_names() %>%
+  mutate(date = as.Date(date)) 
+
+
+#Importing summer locations.
+s23_locs <- read_xlsx("/Volumes/Samsung_T5/BOBWHITE_DATA/Clean/SummerLocations/Summer2023/2023_burn_locs_burned_unburned_CORRECTED.xlsx") %>%
+  clean_names() %>%
+  mutate(date = ymd(date)) %>%
+  filter(status != "D") %>%
+  mutate(burned = as.double(burned))
+
+#Adding DSF. Most locations burned March 21 2023. We'll add the subset of other locations next.
+burn_date_2023_most <- ymd("2023-03-21")
+
+s23_locs$dsf <- as.numeric(s23_locs$date - burn_date_2023_most)
+
+#Importing a spreadsheet of all locations from burn unit burned in 17 April (these rows still in s23_locs... this is a subset).
+#These points are already properly identified as burned/unburned based on burn date. but must find way to accurately update DSF...
+s23_april17subset <- read_xlsx("/Volumes/Samsung_T5/BOBWHITE_DATA/Clean/SummerLocations/Summer2023/s23LocsIn17AprilBurnUnit.xlsx") %>%
+  clean_names() %>%
+  mutate(date = as.Date(date)) %>%
+  dplyr::filter(date > "2023-04-17",
+                status != "D") 
+
+
+burn_date_subset <- ymd("2023-04-17")
+
+s23_april17subset$dsf <- as.numeric(s23_april17subset$date - burn_date_subset)
+
+
+#Now, we must replace rows in s23_locs with identical rows in the subset (based on band_numb, date, northing, and easting)
+s23_locs <- rows_update(s23_locs, s23_april17subset, by = c("band_numb", "date", "northing", "easting"), copy = TRUE)
+
+#Adding in age/sex of each bird. May be useful
+#The fate spreadsheet has age and sex info for each bird.
+#Importing "fate" spreadsheet
+fate <- rio::import("/Users/jeffgrayum/Downloads/Fate_2023.xlsx", setclass = "tibble") %>%
+  clean_names() 
+
+#Now we bind age and sex into locations, based on band_numb
+s23_locs <- s23_locs%>%
+  left_join(fate %>% 
+              dplyr::select(band_numb, age, sex), 
+            by = "band_numb")
+
+#filtering for time frame
+s23_locs <- s23_locs %>%
+  dplyr::filter(date <= "2023-08-11")
+```
+
+
+Adding veg data to s23_locs
+```{r}
+#### Adding veg data to s23 locs ####]
+#Adding week column to each tibble
+s23_locs$week <- week(s23_locs$date)
+
+#Importing veg data summary with fixed week.
+veg_23_summary_fix <- read_xlsx("/Volumes/Samsung_T5/BOBWHITE_DATA/Clean/VegSurveys/veg_23_summary_weekFixed.xlsx")
+
+
+
+#Now, we join based on week.
+s23_locs_veg <- inner_join(s23_locs, veg_23_summary_fix, by = "week")
+
+#taking a look
+s23_locs_veg%>%
+  view()
+
+#renaming some columns
+s23_locs_veg <- s23_locs_veg %>%
+  rename(date = date.x,
+         start_date_of_week = date.y)
+
+```
+
+Adding a distance to edge column to locations
+```{r}
+#### Adding dte ####
+
+#Importing map of burned areas, summer 2022.
+#Reading burn compartments in again, but as an sf object
+burn_compartments_2023 <- st_read("/Volumes/Samsung_T5/BOBWHITE_DATA/Maps/2023_burn_compartments/burn 2023 map/NoAG_NoHW/2023_burn_units_NoAg_NoHW.shp")
+
+# Converting burn_compartments_2022 polygons to line geometries that represent their boundaries. This is necessary to calc min distances later.
+burn_compartment_boundaries <- st_boundary(burn_compartments_2023)
+
+# Converting tibble of points to an sf object
+s23_locs_sf <- st_as_sf(s23_locs_veg, coords = c("easting", "northing"), crs = st_crs(burn_compartments_2023))
+
+# Calculating the distance from each point to the nearest line boundary of the burn compartments, storing it in matrix
+distance_matrix <- st_distance(s23_locs_sf, burn_compartment_boundaries)
+
+# Applying the function min() to each row (1 does this -- we'd use 2 for columns) in the distance matrix
+min_distances <- apply(distance_matrix, 1, min)
+
+# Add the minimum distance to the original tibble as a new column
+s23_locs_veg$distance_to_edge <- min_distances
+```
+
+Making some distance to edge plots (Still, not the expected trend)
+```{r}
+#### Plotting DTE ####
+s23_locs_veg %>%
+  dplyr::filter(burned == 1) %>%
+  ggplot(aes(dsf, distance_to_edge)) +
+  geom_point() +
+  geom_smooth() +
+  labs(x = "DSF",
+       y = "Distance to edge (m)",
+       title = "Distance to edge following prescribed fire (2023)",
+       subtitle = "Only looking at birds within burned units")
+
+s23_locs_veg %>%
+  dplyr::filter(burned == 1) %>%
+  summarize(mean_dte = mean(distance_to_edge)) %>%
+  print()
+
+s23_locs_veg %>%
+  dplyr::filter(burned == 0) %>%
+  ggplot(aes(dsf, distance_to_edge)) +
+  geom_point() +
+  geom_smooth() +
+  labs(x = "DSF",
+       y = "Distance to edge (m)",
+       title = "Distance to edge following prescribed fire (2023)",
+       subtitle = "Only looking at birds within unburned units")
+
+s23_locs_veg %>%
+  dplyr::filter(burned == 0) %>%
+  summarize(mean_dte = mean(distance_to_edge)) %>%
+  print()
+```
+
+
+
