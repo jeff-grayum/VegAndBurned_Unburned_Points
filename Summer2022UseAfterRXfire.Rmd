@@ -328,7 +328,95 @@ model_comparison_sorted %>% view()
 plot(model5, which = 1:4, type = "pearson")
 ```
 
+Single variable candidate models (GAM)
+```{r}
+#### Candidate models (GAM) 2022 #### 
 
+gmodel1 <- gam(pib ~ pg,
+                     data = s22rx_sc,
+                     family=betar(link = "logit"),
+                     na.action = "na.pass")
+
+
+gmodel2 <- gam(pib ~ DSF, 
+                  data = s22rx_sc,
+                  family = betar(link = "logit"),
+                  na.action = "na.pass")
+
+gmodel3 <- gam(pib ~ pf, 
+                  data = s22rx_sc,
+                  family = betar(link = "logit"),
+                  na.action = "na.pass")
+
+gmodel4 <- gam(pib ~ ps,
+                  data = s22rx_sc,
+                  family = betar(link = "logit"),
+                  na.action = "na.pass")
+
+gmodel5 <- gam(pib ~ hg,
+                  family = betar(link = "logit"),
+                  data = s22rx_sc,
+                  na.action = "na.pass")
+
+
+gmodel6 <- gam(pib ~ hf,
+                  family = betar(link = "logit"),
+                  data = s22rx_sc,
+                  na.action = "na.pass")
+
+gmodel7 <- gam(pib ~ hs,
+                   family = betar(link = "logit"),
+                  data = s22rx_sc,
+                  na.action = "na.pass")
+
+gmodel8 <- gam(pib ~ 1,
+                  family = betar(link = "logit"),
+                  data = s22rx_sc,
+                  na.action = "na.pass")
+```
+
+Ranking candidate models (gam)
+```{r}
+
+#### Ranking gam models 2022/23 ####
+# Creating a data frame to store model names and their AIC values
+model_names <- c(paste0("gmodel", 1:8))
+
+
+model_list <- list(gmodel1, gmodel2, gmodel3, gmodel4,
+                   gmodel5, gmodel6, gmodel7, gmodel8)
+
+
+model_aic <- sapply(model_list, AIC)
+model_nll <- sapply(model_list, logLik)
+
+# Combine the model names and AIC values into a data frame
+model_comparison <- data.frame(Model = model_names, AIC = model_aic, nll = - model_nll)
+
+# Sort the models by AIC value
+model_comparison_sorted <- model_comparison %>% 
+  arrange(AIC)
+
+# View the sorted data frame
+model_comparison_sorted %>% 
+  view()
+
+# Calculate the minimum AIC value among all models
+min_aic <- min(model_comparison_sorted$AIC)
+
+# Add a column for Delta AIC
+model_comparison_sorted <- model_comparison_sorted %>%
+  mutate(Delta_AIC = AIC - min_aic)
+
+# View the updated data frame
+model_comparison_sorted %>% view()
+
+model_comparison_sorted$rll <- exp(-0.5*model_comparison_sorted$Delta_AIC)
+model_comparison_sorted$weight <- model_comparison_sorted$rll/sum(model_comparison_sorted$rll)
+model_comparison_sorted$weight <- round(model_comparison_sorted$weight,3)
+
+model_comparison_sorted %>% view
+```
 Candidate models (GAM)
 ```{r}
 #### Candidate models (GAM) #### 
