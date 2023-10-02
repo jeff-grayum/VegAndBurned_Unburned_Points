@@ -1,0 +1,82 @@
+---
+title: "RemovingTeleStat"
+output: html_document
+date: "2023-09-26"
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library(raster)
+library(amt)
+library(dplyr)
+library(tibble)
+library(purrr)
+library(tidyr)
+library(lme4)
+library(lmerTest)
+library(janitor)
+library(rio)
+library(stringr)
+library(MuMIn)
+library(tidyverse)
+library(bayesplot)
+library(ggeffects)
+library(ggplot2)
+library(brms)
+```
+
+Importing lumped data
+```{r}
+#### Importing all summer 2022 data ####
+s22locs <- rio::import("/Volumes/Samsung_T5/BOBWHITE_DATA/Clean/SummerLocations/Summer2022/All_Summer_2022_LOCS_CLEAN_NO_Nests.xlsx", setclass = "tibble") %>%
+  clean_names() %>%
+  filter(status != "D") %>%
+  mutate(date = lubridate::as_date(date))
+
+
+s22locs$week <- week(s22locs$date)
+
+s22locs1aDay <- s22locs %>%
+  group_by(band_numb, date) %>%
+  slice_head(n = 1) %>%
+  ungroup()
+
+s22locs3aweek <- s22locs1aDay %>%
+  group_by(band_numb, week) %>% 
+  slice_sample(n = 3) %>%
+  ungroup()
+
+writexl::write_xlsx(s22locs3aweek, "/Volumes/Samsung_T5/R_projects/_THESIS/Chapter1/S22locsUnweightedv2.xlsx")
+```
+
+
+```{r}
+#### Importing all summer 2023 data ####
+s23locs <- rio::import("/Volumes/Samsung_T5/BOBWHITE_DATA/Clean/SummerLocations/Summer2023/Summer2023Locs_Clean3.xlsx", setclass = "tibble") %>%
+  clean_names() %>%
+  filter(status != "D", 
+         status != "N") %>%
+  mutate(date = lubridate::as_date(date))
+
+s23locs$week <- week(s23locs$date)
+
+s23locs1aDay <- s23locs %>%
+  group_by(band_numb, date) %>%
+  slice_head(n = 1) %>%
+  ungroup()
+
+s23locs3aweek <- s23locs1aDay %>%
+  group_by(band_numb, week) %>% 
+  slice_sample(n = 3) %>%
+  ungroup()
+
+writexl::write_xlsx(s23locs3aweek, "/Volumes/Samsung_T5/R_projects/_THESIS/Chapter1/S23locsUnweighted.xlsx")
+```
+
+
