@@ -187,6 +187,9 @@ s22rx %>%
        y = "Distance to Edge",
        title = "Distance to edge following prescribed fire")
 
+s22dist <- s22rx %>%
+  select(burned, distance_to_edge)
+
 ```
 
 
@@ -206,13 +209,14 @@ ave_burned_per_week %>%
 
 #proportion of birds in burn areas each day.
 s22rx %>%
-  ggplot(aes(date, pib)) +
+  ggplot(aes(DSF, pib)) +
   geom_point() +
-  geom_smooth(method = "loess") +
+  #geom_smooth(method = "loess") +
   scale_y_continuous(labels = percent) +
-  labs(x = "Date",
-       y = "% of birds in burned areas",
-       title = "Percent of birds located in burned areas following prescribed fire")
+  labs(x = "Days since fire",
+       y = "% of sampled bobwhite in burned units",
+       title = "Use of burned areas following prescribed fire in 2022") +
+  theme_bw()
 
 ```
 
@@ -223,6 +227,11 @@ Centering and scaling vegetation covariates
 s22rx_sc <- s22rx %>% 
   mutate_at(vars(pg:hs), .funs = function(x){as.numeric(scale(x, center = T))}) %>%
   mutate(pib = pib + 0.00001)
+
+s22rx_sc1 <- s22rx_sc %>%
+  select(pib, DSF, pg:hs)
+
+s22_rx_uniq <- s22rx_sc1[!duplicated(s22rx_sc1), ]
 ```
 
 Checking for correlations 
@@ -242,230 +251,57 @@ csveg <- s22rx_sc %>%
 cor(csveg)
 ```
 
-
-Candidate models w beta distribution (post MDM meeting)
-```{r}
-#### Beta candidate models with beta distribution (post meeting) ####
-#Global model
-model1 <- betareg(pib ~ pg + pf + ps + hg + hf + DSF,
-                     data = s22rx_sc,
-                     na.action = "na.pass")
-
-
-model2 <- betareg(pib ~ DSF, 
-                  data = s22rx_sc,
-                  na.action = "na.pass")
-
-model3<- betareg(pib ~ DSF + I(DSF^2), 
-                  data = s22rx_sc,
-                  na.action = "na.pass")
-
-model4 <- betareg(pib ~ pg + pf + ps,
-                  data = s22rx_sc,
-                  na.action = "na.pass")
-
-model5 <- betareg(pib ~ hg + hf + hs,
-                  data = s22rx_sc,
-                  na.action = "na.pass")
-
-
-model6 <- betareg(pib ~ pg + hg + pf + hg,
-                  data = s22rx_sc,
-                  na.action = "na.pass")
-
-model7 <- betareg(pib ~ ps,
-                  data = s22rx_sc,
-                  na.action = "na.pass")
-
-model8 <- betareg(pib ~ 1,
-                  data = s22rx_sc,
-                  na.action = "na.pass")
-
-```
-
-Ranking candidate models
-```{r}
-#### ranking beta candidate models (post meeting) ####
-# Creating a data frame to store model names and their AIC values
-model_names <- c(paste0("model", 1:8))
-
-
-model_list <- list(model1, model2, model3, model4,
-                   model5, model6, model7, model8)
-
-
-model_aic <- sapply(model_list, AIC)
-model_nll <- sapply(model_list, logLik)
-
-# Combine the model names and AIC values into a data frame
-model_comparison <- data.frame(Model = model_names, AIC = model_aic, nll = - model_nll)
-
-# Sort the models by AIC value
-model_comparison_sorted <- model_comparison %>% 
-  arrange(AIC)
-
-# View the sorted data frame
-model_comparison_sorted %>% 
-  view()
-
-# Calculate the minimum AIC value among all models
-min_aic <- min(model_comparison_sorted$AIC)
-
-# Add a column for Delta AIC
-model_comparison_sorted <- model_comparison_sorted %>%
-  mutate(Delta_AIC = AIC - min_aic)
-
-# View the updated data frame
-model_comparison_sorted %>% view()
-
-model_comparison_sorted$rll <- exp(-0.5*model_comparison_sorted$Delta_AIC)
-model_comparison_sorted$weight <- model_comparison_sorted$rll/sum(model_comparison_sorted$rll)
-model_comparison_sorted$weight <- round(model_comparison_sorted$weight,3)
-
-model_comparison_sorted %>% view()
-#write_xlsx(model_comparison_sorted, "/Users/jeffgrayum/Downloads/model_comparison.xlsx")
-
-plot(model5, which = 1:4, type = "pearson")
-```
-
-Single variable candidate models (GAM)
+Univarariate candidate models (GAM)
 ```{r}
 #### Candidate models (GAM) 2022 #### 
 
 gmodel1 <- gam(pib ~ pg,
-                     data = s22rx_sc,
+                     data = s22_rx_uniq,
                      family=betar(link = "logit"),
                      na.action = "na.pass")
 
 
 gmodel2 <- gam(pib ~ DSF, 
-                  data = s22rx_sc,
+                  data = s22_rx_uniq,
                   family = betar(link = "logit"),
                   na.action = "na.pass")
 
 gmodel3 <- gam(pib ~ pf, 
-                  data = s22rx_sc,
+                  data = s22_rx_uniq,
                   family = betar(link = "logit"),
                   na.action = "na.pass")
 
 gmodel4 <- gam(pib ~ ps,
-                  data = s22rx_sc,
+                  data = s22_rx_uniq,
                   family = betar(link = "logit"),
                   na.action = "na.pass")
 
 gmodel5 <- gam(pib ~ hg,
                   family = betar(link = "logit"),
-                  data = s22rx_sc,
+                  data = s22_rx_uniq,
                   na.action = "na.pass")
 
 
 gmodel6 <- gam(pib ~ hf,
                   family = betar(link = "logit"),
-                  data = s22rx_sc,
+                  data = s22_rx_uniq,
                   na.action = "na.pass")
 
 gmodel7 <- gam(pib ~ hs,
                    family = betar(link = "logit"),
-                  data = s22rx_sc,
+                  data = s22_rx_uniq,
                   na.action = "na.pass")
 
 gmodel8 <- gam(pib ~ 1,
                   family = betar(link = "logit"),
-                  data = s22rx_sc,
+                  data = s22_rx_uniq,
                   na.action = "na.pass")
 ```
 
 Ranking candidate models (gam)
 ```{r}
 
-#### Ranking gam models 2022/23 ####
-# Creating a data frame to store model names and their AIC values
-model_names <- c(paste0("gmodel", 1:8))
-
-
-model_list <- list(gmodel1, gmodel2, gmodel3, gmodel4,
-                   gmodel5, gmodel6, gmodel7, gmodel8)
-
-
-model_aic <- sapply(model_list, AIC)
-model_nll <- sapply(model_list, logLik)
-
-# Combine the model names and AIC values into a data frame
-model_comparison <- data.frame(Model = model_names, AIC = model_aic, nll = - model_nll)
-
-# Sort the models by AIC value
-model_comparison_sorted <- model_comparison %>% 
-  arrange(AIC)
-
-# View the sorted data frame
-model_comparison_sorted %>% 
-  view()
-
-# Calculate the minimum AIC value among all models
-min_aic <- min(model_comparison_sorted$AIC)
-
-# Add a column for Delta AIC
-model_comparison_sorted <- model_comparison_sorted %>%
-  mutate(Delta_AIC = AIC - min_aic)
-
-# View the updated data frame
-model_comparison_sorted %>% view()
-
-model_comparison_sorted$rll <- exp(-0.5*model_comparison_sorted$Delta_AIC)
-model_comparison_sorted$weight <- model_comparison_sorted$rll/sum(model_comparison_sorted$rll)
-model_comparison_sorted$weight <- round(model_comparison_sorted$weight,3)
-
-model_comparison_sorted %>% view
-```
-Candidate models (GAM)
-```{r}
-#### Candidate models (GAM) #### 
-
-gmodel1 <- gam(pib ~ pg + pf + ps + hg + hf + DSF,
-                     data = s22rx_sc,
-                     family=betar(link = "logit"),
-                     na.action = "na.pass")
-
-
-gmodel2 <- gam(pib ~ DSF, 
-                  data = s22rx_sc,
-                  family = betar(link = "logit"),
-                  na.action = "na.pass")
-
-gmodel3 <- gam(pib ~ DSF + I(DSF^2), 
-                  data = s22rx_sc,
-                  family = betar(link = "logit"),
-                  na.action = "na.pass")
-
-gmodel4 <- gam(pib ~ pg + pf + ps,
-                  data = s22rx_sc,
-                  family = betar(link = "logit"),
-                  na.action = "na.pass")
-
-gmodel5 <- gam(pib ~ hg + hf + hs,
-                  family = betar(link = "logit"),
-                  data = s22rx_sc,
-                  na.action = "na.pass")
-
-
-gmodel6 <- gam(pib ~ pg + hg + pf + hg,
-                  family = betar(link = "logit"),
-                  data = s22rx_sc,
-                  na.action = "na.pass")
-
-gmodel7 <- gam(pib ~ ps,
-                   family = betar(link = "logit"),
-                  data = s22rx_sc,
-                  na.action = "na.pass")
-
-gmodel8 <- gam(pib ~ 1,
-                  family = betar(link = "logit"),
-                  data = s22rx_sc,
-                  na.action = "na.pass")
-```
-
-```{r}
- #### Ranking gam models ####
+#### Ranking gam models 2022 ####
 # Creating a data frame to store model names and their AIC values
 model_names <- c(paste0("gmodel", 1:8))
 
@@ -504,8 +340,9 @@ model_comparison_sorted$weight <- round(model_comparison_sorted$weight,3)
 
 model_comparison_sorted %>% view
 
-
+#write_xlsx(model_comparison_sorted, "/Users/jeffgrayum/Downloads/model_comparison22.xlsx")
 ```
+
 
 ```{r}
 #### Plotting veg data vs percent in burned ####
@@ -741,1016 +578,83 @@ hs_results_df %>%
 
 ```
 
-
-Old Beta Models (too much like dredge... minimal ecological difference between models.)
+Adding in temp data
 ```{r}
-#### Old beta models ####
+temp22 <- read_csv("/Volumes/Samsung_T5/BOBWHITE_DATA/Clean/Other/IchTempData.csv") %>%
+  clean_names() %>%
+  mutate(date = as.Date(date, tryFormats = "%m-%d-%Y")) 
 
-null <- betareg(pib ~ 1,
-                data = summer_locs_veg_data_perc_burned_modified,
-                na.action = "na.pass")
-                     
-AIC(null)
+temp22f <- temp22[temp22$date %in% seq(as.Date("2022-04-11"), by="day",length.out=116),]
 
-# Model 1 (all veg influences veg)
-model1 <- betareg(pib ~
-                     pg +
-                     pf +
-                     ps + 
-                     hg + 
-                     hf,
-                     data = s22rx_sc,
-                     na.action = "na.pass")
-                     
+start_date22 <- ymd("2022-04-11")
 
-# Model 2 (only looking at herbaceous veg components)
-model2 <- betareg(pib ~
-                     pg +
-                     pf +
-                     hg + 
-                     hf,
-                     data = s22rx_sc,
-                     na.action = "na.pass")
-                     
+temp22f$DSF <- as.numeric(temp22f$date - start_date22)
 
-# Model 3 only grass influences use
-model3 <- betareg(pib ~
-                     pg + 
-                     hg,
-                     data = s22rx_sc,
-                     na.action = "na.pass")
-                     
+s22rx <- s22rx %>%
+  left_join(temp22f %>% select(air_temp_max_c, DSF), by = "DSF")
 
-# Model 4 only forbs influence use 
-model4 <- betareg(pib ~
-                     pf +  
-                     hf,
-                     data = s22rx_sc,
-                     na.action = "na.pass")
-                     
+s22temp <- s22rx %>%
+  select(DSF, air_temp_max_c)
 
-# Model 5 Height of herbaceous veg influencing use
-model5 <- betareg(pib ~
-                     hg + 
-                     hf,
-                     data = s22rx_sc,
-                     na.action = "na.pass")
-                     
-
-# Model 6 percent of cover of herb veg influencing use
-model6 <- betareg(pib ~
-                     pg + 
-                     pf +  
-                     hg + 
-                     hf,
-                     data = s22rx_sc,
-                     na.action = "na.pass")
-                     
-
-#Model 7, pecent grasses influence use 
-model7 <- betareg(pib ~
-                     pg,
-                     data = s22rx_sc,
-                     na.action = "na.pass")
-                     
-
-#Model 8, height grasses influence use 
-model7 <- betareg(pib ~
-                     hg,
-                     data = s22rx_sc,
-                     na.action = "na.pass")
-                     
-
-#model 8, perc forbs influences use
-model8 <- betareg(pib ~
-                     pf,
-                     data = s22rx_sc,
-                     na.action = "na.pass")
-                     
-
-#Model 9, height forbs influences use 
-model9 <- betareg(pib ~
-                     hf,
-                     data = s22rx_sc,
-                     na.action = "na.pass")
-                     
-
-# Model 10 Shrubby height and cover influences use
-model10 <- betareg(pib ~
-                     ps +
-                     hs,
-                     data = s22rx_sc,
-                     na.action = "na.pass")
-                     
-
-#Model 11 percent of shrubs is most influential
-model11 <- betareg(pib ~
-                     ps,
-                     data = s22rx_sc,
-                     na.action = "na.pass")
-                     
-
-#Model 12 height of shurbs is most influential
-model12 <- betareg(pib ~
-                     hs,
-                     data = s22rx_sc,
-                     na.action = "na.pass")
-                     
-
-#Model 13 Height of all veg cover most influences use.
-model13 <- betareg(pib ~
-                     hg +
-                     hf +
-                     hs,
-                     data = s22rx_sc,
-                     na.action = "na.pass")
-                     
-
-#Model 14 percent cover of all veg cover most influences use.
-model14 <- betareg(pib ~
-                     pg +
-                     pf +
-                     ps,
-                     data = s22rx_sc,
-                     na.action = "na.pass")
-                     
-
-#model 15 Height of grasses, percent forbs (grow "out" more than "up"), and height of shrubs.
-model15 <- betareg(pib ~
-                     hg +
-                     pf +
-                     hs,
-                     data = s22rx_sc,
-                     na.action = "na.pass")
-                     
-
-#Model 16, same as above, but percent shrubs may be more influential with this combination.
-model16 <- betareg(pib ~
-                     hg +
-                     pf +
-                     ps,
-                     data = s22rx_sc,
-                     na.action = "na.pass")
-                     
-
-#Model 17, percent grasses, percent forbs, and height shrubs
-model17 <- betareg(pib ~
-                     pg +
-                     pf +
-                     hs,
-                     data = s22rx_sc,
-                     na.action = "na.pass")
-                     
-
-#model 18, only height grasses and height shrubs (vertical cover)
-model18 <- betareg(pib ~
-                     hg +
-                     hs,
-                     data = s22rx_sc,
-                     na.action = "na.pass")
-                     
-
-#Model 19, horizontal cover from forbs, vertical from shrubs
-model19 <- betareg(pib ~
-                     pf +
-                     hs,
-                     data = s22rx_sc,
-                     na.action = "na.pass")
-                     
-
-#Model 20, horizontal cover from forbs, vertical from grass
-model20 <- betareg(pib ~
-                     pf +
-                     hg,
-                     data = s22rx_sc,
-                     na.action = "na.pass")
-                     
-
-#Model 21, height of grasses and shrubs
-model21 <- betareg(pib ~
-                     hg +
-                     hs,
-                     data = s22rx_sc,
-                     na.action = "na.pass")
-                     
-
-
-# Model 22 (only looking at herbaceous veg components, but with DSF)
-model22 <- betareg(pib ~
-                     pg +
-                     pf +
-                     hg + 
-                     hf +
-                     DSF,
-                     data = s22rx_sc,
-                     na.action = "na.pass")
-                     
-
-# Model 23 only grass influences use, along with DSF
-model23 <- betareg(pib ~
-                     pg + 
-                     hg +
-                     DSF,
-                     data = s22rx_sc,
-                     na.action = "na.pass")
-                     
-
-# Model 24 only forbs influence use, plus DSF
-model24 <- betareg(pib ~
-                     pf +  
-                     hf +
-                     DSF,
-                     data = s22rx_sc,
-                     na.action = "na.pass")
-                     
-
-# Model 25 Height of herbaceous veg influencing use, plus DSF
-model25 <- betareg(pib ~
-                     hg + 
-                     hf +
-                     DSF, 
-                     data = s22rx_sc,
-                     na.action = "na.pass")
-                     
-
-# Model 26 percent of cover of herb veg influencing use, along with DSF
-model26 <- betareg(pib ~
-                     pg + 
-                     pf +  
-                     hg + 
-                     hf +
-                     DSF,
-                     data = s22rx_sc,
-                     na.action = "na.pass")
-                     
-
-#Model 27, percent grasses influence use, plus DSF
-model27 <- betareg(pib ~
-                     pg +
-                     DSF,
-                     data = s22rx_sc,
-                     na.action = "na.pass")
-                     
-
-#Model 28, height grasses influence use, plus DSF
-model28 <- betareg(pib ~
-                     hg +
-                     DSF,
-                     data = s22rx_sc,
-                     na.action = "na.pass")
-                     
-
-#model 29, perc forbs influences use, including DSF
-model29 <- betareg(pib ~
-                     pf +
-                     DSF,
-                     data = s22rx_sc,
-                     na.action = "na.pass")
-                     
-
-#Model 30, height forbs influences use 
-model30 <- betareg(pib ~
-                     hf +
-                     DSF,
-                     data = s22rx_sc,
-                     na.action = "na.pass")
-                     
-
-# Model 31 Shrubby height and cover influences use, including DSF
-model31 <- betareg(pib ~
-                     ps +
-                     #hs +
-                     DSF,
-                     data = s22rx_sc,
-                     na.action = "na.pass")
-                     
-
-#Model 32 percent of shrubs is most influential, including DSF
-model32 <- betareg(pib ~
-                     ps +
-                     DSF,
-                     data = s22rx_sc,
-                     na.action = "na.pass")
-                     
-
-#Model 33 height of shurbs is most influential, along with DSF
-model33 <- betareg(pib ~
-                     hs +
-                     DSF,
-                     data = s22rx_sc,
-                     na.action = "na.pass")
-                     
-
-#Model 34 Height of all veg cover most influences use, including DSF.
-model34 <- betareg(pib ~
-                     hg +
-                     hf +
-                     hs +
-                     DSF, 
-                     data = s22rx_sc,
-                     na.action = "na.pass")
-                     
-
-#Model 35 percent cover of all veg cover most influences use, with DSF.
-model35 <- betareg(pib ~
-                     pg +
-                     pf +
-                     ps +
-                     DSF,
-                     data = s22rx_sc,
-                     na.action = "na.pass")
-                     
-
-#model 36 Height of grasses, percent forbs (grow "out" more than "up"), and height of shrubs. Also, DSF
-model36 <- betareg(pib ~
-                     hg +
-                     pf +
-                     hs +
-                     DSF,
-                     data = s22rx_sc,
-                     na.action = "na.pass")
-
-
-#Model 37, same as above, but percent shrubs may be more influential with this combination. Including DSF this time
-model37 <- betareg(pib ~
-                     hg +
-                     pf +
-                     ps +
-                     DSF,
-                     data = s22rx_sc,
-                     na.action = "na.pass")
-                     
-
-#Model 38, percent grasses, percent forbs, and height shrubs. Plus DSF
-model38 <- betareg(pib ~
-                     pg +
-                     pf +
-                     hs +
-                     DSF,
-                     data = s22rx_sc,
-                     na.action = "na.pass")
-                     
-
-#model 39, only height grasses and height shrubs (vertical cover). With DSF.
-model39 <- betareg(pib ~
-                     hg +
-                     hs +
-                     DSF,
-                     data = s22rx_sc,
-                     na.action = "na.pass")
-                     
-
-#Model 40, horizontal cover from forbs, vertical from shrubs. Including DSF
-model40 <- betareg(pib ~
-                     pf +
-                     hs +
-                     DSF,
-                     data = s22rx_sc,
-                     na.action = "na.pass")
-                     
-
-#Model 41, horizontal cover from forbs, vertical from grass. Including DSF
-model41 <- betareg(pib ~
-                     pf +
-                     hg +
-                     DSF,
-                     data = s22rx_sc,
-                     na.action = "na.pass")
-                     
-
-#Model 42, height of grasses and shrubs, plus DSF
-model42 <- betareg(pib ~
-                     pf +
-                     hg +
-                     DSF,
-                     data = s22rx_sc,
-                     na.action = "na.pass")
-                     
-
-#Model 43, all veg except height grass. Maybe vertical cover from thin blades of grass isn't important. With this many veg covariates, DSF may not be important.
-model43 <- betareg(pib ~
-                     pg +
-                     pf +
-                     ps + 
-                     hf + 
-                     hs,
-                     data = s22rx_sc,
-                     na.action = "na.pass")
-                     
-
-#Model 44, all veg except height grass height forbs. Maybe forbs provide better horizontal cover
-model44 <- betareg(pib ~
-                     pg +
-                     pf +
-                     hg + 
-                     hs,
-                     data = s22rx_sc,
-                     na.action = "na.pass")
-                     
-
-#Model 45, all veg except height grass height forbs. Maybe forbs provide better horizontal cover
-model45 <- betareg(pib ~
-                     pg +
-                     pf +
-                     ps +
-                     hs,
-                     data = s22rx_sc,
-                     na.action = "na.pass")
-                     
-
-#model 46, only DSF
-model46 <- betareg(pib ~
-                     DSF,
-                     data = s22rx_sc,
-                     na.action = "na.pass")
-
-#model 47, only DSF
-model47 <- betareg(pib ~
-                     DSF +I(DSF^2),
-                     data = s22rx_sc,
-                     na.action = "na.pass")
-
-summary(model46)
-                     
-
-
-Now looking at all models with binomial distribution
-```{r}
-#### candidate models, binomial distribution ####
-#Global model
-globalmodel <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
-                     pg +
-                     pf +
-                     ps +    
-                     hg + 
-                     hf + 
-                     DSF,
-                     data = s22rx_sc,
-                     family = binomial,
-                     na.action = "na.pass")
-
-# Model 1
-model1 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
-                     pg +
-                     pf +
-                     ps + 
-                     hg + 
-                     hf,
-                     data = s22rx_sc,
-                     family = binomial,
-                     na.action = "na.pass")
-
-# Model 2
-model2 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
-                     pg +
-                     pf +
-                     hg + 
-                     hf,
-                     data = s22rx_sc,
-                     family = binomial,
-                     na.action = "na.pass")
-
-# Model 3
-model3 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
-                     pg + 
-                     hg,
-                     data = s22rx_sc,
-                     family = binomial,
-                     na.action = "na.pass")
-
-# Model 4
-model4 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
-                     pf +  
-                     hf,
-                     data = s22rx_sc,
-                     family = binomial,
-                     na.action = "na.pass")
-
-# Model 5
-model5 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
-                     hg + 
-                     hf,
-                     data = s22rx_sc,
-                     family = binomial,
-                     na.action = "na.pass")
-
-# Model 6
-model6 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
-                     pg + 
-                     pf +  
-                     hg + 
-                     hf,
-                     data = s22rx_sc,
-                     family = binomial,
-                     na.action = "na.pass")
-
-# Model 7
-model7 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
-                     pg,
-                     data = s22rx_sc,
-                     family = binomial,
-                     na.action = "na.pass")
-
-# Model 8
-model8 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
-                     pf,
-                     data = s22rx_sc,
-                     family = binomial,
-                     na.action = "na.pass")
-
-# Model 9
-model9 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
-                     hf,
-                     data = s22rx_sc,
-                     family = binomial,
-                     na.action = "na.pass")
-
-# Model 10
-model10 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
-                     ps +
-                     hs,
-                     data = s22rx_sc,
-                     family = binomial,
-                     na.action = "na.pass")
-
-# Model 11
-model11 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
-                     ps,
-                     data = s22rx_sc,
-                     family = binomial,
-                     na.action = "na.pass")
-
-# Model 12
-model12 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
-                     hs,
-                     data = s22rx_sc,
-                     family = binomial,
-                     na.action = "na.pass")
-
-# Model 13
-model13 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
-                     hg +
-                     hf +
-                     hs,
-                     data = s22rx_sc,
-                     family = binomial,
-                     na.action = "na.pass")
-
-# Model 14
-model14 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
-                     pg +
-                     pf +
-                     ps,
-                     data = s22rx_sc,
-                     family = binomial,
-                     na.action = "na.pass")
-
-# Model 15
-model15 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
-                     hg +
-                     pf +
-                     hs,
-                     data = s22rx_sc,
-                     family = binomial,
-                     na.action = "na.pass")
-
-# Model 16
-model16 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
-                     hg +
-                     pf +
-                     ps,
-                     data = s22rx_sc,
-                     family = binomial,
-                     na.action = "na.pass")
-
-# Model 17
-model17 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
-                     pg +
-                     pf +
-                     hs,
-                     data = s22rx_sc,
-                     family = binomial,
-                     na.action = "na.pass")
-
-# Model 18
-model18 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
-                     hg +
-                     hs,
-                     data = s22rx_sc,
-                     family = binomial,
-                     na.action = "na.pass")
-
-# Model 19
-model19 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
-                     pf +
-                     hs,
-                     data = s22rx_sc,
-                     family = binomial,
-                     na.action = "na.pass")
-
-# Model 20
-model20 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
-                     pf +
-                     hg,
-                     data = s22rx_sc,
-                     family = binomial,
-                     na.action = "na.pass")
-
-
-#Model 21, height of grasses and shrubs
-model21 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
-                     hg +
-                     hs,
-                     family = binomial, data = s22rx_sc, na.action = "na.pass")
-
-# Model 22 (only looking at herbaceous veg components, but with DSF)
-model22 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
-                     pg +
-                     pf +
-                     hg + 
-                     hf +
-                     DSF,
-                     family = binomial, data = s22rx_sc, na.action = "na.pass")
-
-# Model 23 only grass influences use, along with DSF
-model23 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
-                     pg + 
-                     hg +
-                     DSF,
-                     family = binomial, data = s22rx_sc, na.action = "na.pass")
-
-# Model 24 only forbs influence use, plus DSF
-model24 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
-                     pf +  
-                     hf +
-                     DSF,
-                     family = binomial, data = s22rx_sc, na.action = "na.pass")
-
-# Model 25 Height of herbaceous veg influencing use, plus DSF
-model25 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
-                     hg + 
-                     hf +
-                     DSF, 
-                     family = binomial, data = s22rx_sc, na.action = "na.pass")
-
-# Model 26 percent of cover of herb veg influencing use, along with DSF
-model26 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
-                     pg + 
-                     pf +  
-                     hg + 
-                     hf +
-                     DSF,
-                     family = binomial, data = s22rx_sc, na.action = "na.pass")
-
-# Model 27, percent grasses influence use, plus DSF
-model27 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
-                     pg +
-                     DSF,
-                     family = binomial, data = s22rx_sc, na.action = "na.pass")
-
-# Model 28, height grasses influence use, plus DSF
-model28 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
-                     hg +
-                     DSF,
-                     family = binomial, data = s22rx_sc, na.action = "na.pass")
-
-# Model 29, perc forbs influences use, including DSF
-model29 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
-                     pf +
-                     DSF,
-                     family = binomial, data = s22rx_sc, na.action = "na.pass")
-
-# Model 30, height forbs influences use 
-model30 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
-                     hf +
-                     DSF,
-                     family = binomial, data = s22rx_sc, na.action = "na.pass")
-
-# Model 31 Shrubby height and cover influences use, including DSF
-model31 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
-                     ps +
-                     DSF,
-                     family = binomial, data = s22rx_sc, na.action = "na.pass")
-
-# Model 32 percent of shrubs is most influential, including DSF
-model32 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
-                     ps +
-                     DSF,
-                     family = binomial, data = s22rx_sc, na.action = "na.pass")
-
-# Model 33 height of shurbs is most influential, along with DSF
-model33 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
-                     hs +
-                     DSF,
-                     family = binomial, data = s22rx_sc, na.action = "na.pass")
-
-# Model 34 Height of all veg cover most influences use, including DSF.
-model34 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
-                     hg +
-                     hf +
-                     hs +
-                     DSF,
-                     family = binomial, data = s22rx_sc, na.action = "na.pass")
-
-# Model 35 percent cover of all veg cover most influences use, with DSF.
-model35 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
-                     pg +
-                     pf +
-                     ps +
-                     DSF,
-                     family = binomial, data = s22rx_sc, na.action = "na.pass")
-
-# Model 36 Height of grasses, percent forbs (grow "out" more than "up"), and height of shrubs. Also, DSF
-model36 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
-                     hg +
-                     pf +
-                     hs +
-                     DSF,
-                     family = binomial, data = s22rx_sc, na.action = "na.pass")
-
-# Model 37, same as above, but percent shrubs may be more influential with this combination. Including DSF this time
-model37 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
-                     hg +
-                     pf +
-                     ps +
-                     DSF,
-                     family = binomial, data = s22rx_sc, na.action = "na.pass")
-
-# Model 38, percent grasses, percent forbs, and height shrubs. Plus DSF
-model38 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
-                     pg +
-                     pf +
-                     hs +
-                     DSF,
-                     family = binomial, data = s22rx_sc, na.action = "na.pass")
-
-# Model 39, only height grasses and height shrubs (vertical cover). With DSF.
-model39 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
-                     hg +
-                     hs +
-                     DSF,
-                     family = binomial, data = s22rx_sc, na.action = "na.pass")
-
-# Model 40, only percent grasses and percent shrubs (horizontal cover). Including DSF.
-model40 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
-                     pg +
-                     ps +
-                     DSF,
-                     family = binomial, data = s22rx_sc, na.action = "na.pass")
-
-# Model 41, grasses and shrubs
-model41 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
-                     pg +
-                     ps +  
-                     hg + 
-                     hs +
-                     DSF,
-                     family = binomial, data = s22rx_sc, na.action = "na.pass")
-
-
-# Model 42, height of grasses, height of forbs, and percent shrubs, plus DSF
-model42 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
-                     hg +
-                     hf +
-                     ps +
-                     DSF,
-                     family = binomial, data = s22rx_sc, na.action = "na.pass")
-
-# Model 43, height of grasses, percent forbs, and percent shrubs, plus DSF
-model43 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
-                     hg +
-                     pf +
-                     ps +
-                     DSF,
-                     family = binomial, data = s22rx_sc, na.action = "na.pass")
-
-# Model 44, percent grasses, height of forbs, and height of shrubs, plus DSF
-model44 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
-                     pg +
-                     hf +
-                     hs +
-                     DSF,
-                     family = binomial, data = s22rx_sc, na.action = "na.pass")
-
-# Model 45, percent grasses, percent forbs, and height of shrubs. Plus DSF.
-model45 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
-                     pg +
-                     pf +
-                     hs +
-                     DSF,
-                     family = binomial, data = s22rx_sc, na.action = "na.pass")
-
-# Model 46, only DSF
-model46 <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
-                     DSF,
-                     family = binomial, data = s22rx_sc, na.action = "na.pass")
-
-
-```
-
-Looking at results of binomial models
-```{r}
-#### ranking binomial models ####
-# Creating a data frame to store model names and their AIC values
-model_names <- c("globalmodel", paste0("model", 1:46))
-
-
-model_list <- list(globalmodel, model1, model2, model3, model4,
-                   model5, model6, model7, model8, model9,
-                   model10, model11, model12, model13, model14,
-                   model15, model16, model17, model18, model19,
-                   model20, model21, model22, model23, model24,
-                   model25, model26, model27, model28, model29,
-                   model30, model31, model32, model33, model34,
-                   model35, model36, model37, model38, model39,
-                   model40, model41, model42, model43, model44, model45, model46)
-
-
-model_aic <- sapply(model_list, AIC)
-
-# Combine the model names and AIC values into a data frame
-model_comparison <- data.frame(Model = model_names, AIC = model_aic)
-
-# Sort the models by AIC value
-model_comparison_sorted <- model_comparison %>% 
-  arrange(AIC)
-
-# View the sorted data frame
-model_comparison_sorted %>% 
-  view()
-
-# Calculate the minimum AIC value among all models
-min_aic <- min(model_comparison_sorted$AIC)
-
-# Add a column for Delta AIC
-model_comparison_sorted <- model_comparison_sorted %>%
-  mutate(Delta_AIC = AIC - min_aic)
-
-# View the updated data frame
-model_comparison_sorted %>% view()
-```
-
-Cross validating top model (binomial)
-```{r}
-
-# Partitioning data into training (80% ) and testing sets 
-set.seed(123)
-trainIndex <- createDataPartition(s22rx_sc$pib, p = .8, list = FALSE)
-trainData <- s22rx_sc[trainIndex,]
-testData  <- s22rx_sc[-trainIndex,]
-
-# Example code for fitting a binomial model on training data
-fit_binomial <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~ pg + ps + hg + hs + DSF,
-                    data = trainData, family = binomial, na.action = na.pass)
-
-# k-fold cross-validation (e.g., 10-fold)
-ctrl <- trainControl(method = "cv", number = 10)
-
-train_binomial <- glm(cbind(birds_in_burned_areas, birds_online - birds_in_burned_areas) ~
-                     pg +
-                     ps +  
-                     hg + 
-                     hs +
-                     DSF,
-                     family = binomial, data = trainData, na.action = "na.pass")
-
-
-testData_new <- testData[,c("pg","ps","hg","hs","DSF")]
-# Evaluating the model on the test set, creating a confusion matrix
-predictions <- predict(train_binomial, newdata = testData, type = "response")
-
-
-
-
-
-plot(predictions - (testData$birds_in_burned_areas)/testData$birds_online)
-mtext("Binomial: Predictions - Observed values", outer = TRUE, line = -1, cex = 1.5)
-
-mean_binomial <- mean(predictions - (testData$birds_in_burned_areas)/testData$birds_online)
+s22temp$year <- 2022
 ```
 
 ```{r}
-# Partitioning data into training (80% ) and testing sets 
-set.seed(123)
-trainIndex <- createDataPartition(s22rx_sc$pib, p = .8, list = FALSE)
-trainData <- s22rx_sc[trainIndex,]
-testData  <- s22rx_sc[-trainIndex,]
+s22rx %>%
+  dplyr::filter(date <= "2022-08-04",
+                DSF > 1) %>%
+  ggplot(aes(x = DSF)) +
+  geom_line(aes(y = (air_temp_max_c, color = "Max Temp (C)")) +  # Divide by 2 to align with pib
+  geom_point(aes(y = pib * 100, color = "% Bobwhite in Burned Area")) +
+  geom_hline(yintercept = 85 / 2, linetype = "dashed", color = "blue") +  # Divide by 2 to align with pib
+  scale_y_continuous(
+    name = "% bobwhite in burned area",
+    sec.axis = sec_axis(~ . * 1, name = "Max daily temp (C)")  # Multiply by 2 to revert the division
+  ) +
+  scale_color_manual(
+    values = c("Max Temp (C)" = "red", "% Bobwhite in Burned Area" = "midnightblue"),
+    name = ""
+  ) +
+  labs(x = "Days since fire",
+       title = "2022: % NOBO in burned area and daily high temperature",
+       subtitle = "Dashed blue line at 85* F") +
+  theme_bw()
 
-# Example code for fitting a binomial model on training data
-fit_beta <- betareg(pib ~  hg + pf + hs + DSF,
-                    data = trainData, na.action = na.pass)
+# Dummy data frame to create legend item for the blue dashed line
+# Assuming s22rx exists and has the relevant columns
+# Create dashed line data
+# Assuming s22rx exists and has the relevant columns
+# Dynamic label name
+degree_label <- paste0("Max ambient temp (", "\u00B0", "F)")
 
-# k-fold cross-validation (e.g., 10-fold)
-ctrl <- trainControl(method = "cv", number = 10)
+# Color mapping
+color_map <- setNames(c("red", "black", "blue"), c(degree_label, "% Bobwhite in burned units", "Bobwhite thermal stress threshold"))
 
-train_beta <- betareg(pib ~
-                     hg +
-                     pf +
-                     hs +
-                     DSF,
-                     data = trainData,
-                     na.action = "na.pass")
+# Assuming s22rx exists and has the relevant columns
+# Create dashed line data
+dashed_line_data <- data.frame(DSF = c(min(s22rx$DSF), max(s22rx$DSF)),
+                               y = c(86.5 / 2, 86.5 / 2))
 
-
-
-testData_new <- testData[,c("pg","ps","hg","hs","DSF")]
-# Evaluating the model on the test set, creating a confusion matrix
-predictions <- predict(train_beta, newdata = testData, type = "response")
-
-
-plot(predictions - (testData$birds_in_burned_areas)/testData$birds_online)
-mtext("Beta: Predictions - Observed values", outer = TRUE, line = -1, cex = 1.5)
-
-mean_beta <- mean(predictions - (testData$birds_in_burned_areas)/testData$birds_online)
+# Plot
+s22rx %>%
+  dplyr::filter(date <= "2022-08-04") %>%
+  ggplot(aes(x = DSF)) +
+  geom_line(aes(y = (air_temp_max_c * 1.8 + 32) / 2, color = degree_label)) +
+  geom_point(aes(y = pib * 100, color = "% Bobwhite in burned units")) +
+  geom_line(data = dashed_line_data, aes(y = y, color = "Bobwhite thermal stress threshold"), linetype = "dashed") +
+  scale_y_continuous(
+    name = "% Bobwhite in burned units",
+    sec.axis = sec_axis(~ . * 2, name = degree_label)
+  ) +
+  scale_color_manual(
+    values = color_map,
+    name = ""
+  ) +
+  labs(x = "Days since fire",
+       y = "% sampled bobwhite in burned units",
+       title = paste0("Use of burned units after prescribed fire\nand max ambient temp (2022) ")) +
+  theme_bw() +
+  scale_x_continuous(breaks = c(0, 30, 60, 90, 120, 150))
 
 ```
-
-```{r}
-library(caret)
-
-set.seed(123)
-trainIndex <- createDataPartition(s22rx_sc$pib, p = .8, list = FALSE)
-trainData <- s22rx_sc[trainIndex,]
-testData  <- s22rx_sc[-trainIndex,]
-
-as.numeric(caret::RMSE(s22rx_sc$pib, predict(model34, newdata = testData)))
-
-```
-
-testing data, Darren's script
-```{r}
-#### Testing data, Darren's script ####
-
-library(glmnet)
-library(caret)
-library(performance)
-library(betareg)
-
-#scale data 
-
-dat <- s22rx 
-
-dat2 = dat #version control since I'm about to modify the dataframe
-dat2[15:21] = scale(dat2[15:21], center = T, scale = T)
-
-#Create Data Partition
-
-train = createDataPartition(dat$pib, p = 0.8, list = F) #use caret to maintain distribution of response variable
-train_set = dat[train,]
-test_set = dat[-train,]
-
-#build binomial model 
-
-bi_model = glm(pib ~ hg + hf + hs, 
-                  family = binomial(link = 'probit'), data = train_set)
-summary(bi_model) #glm is PICKY and will throw a warning, but bi_model will fit
-
-#evaluation using performance package
-
-check_model(bi_model)
-check_distribution(bi_model)
-plot(check_distribution(bi_model))
-
-#predictions
-
-pred_rmse = as.numeric(caret::RMSE(dat2$pib, predict(bi_model, newdata = test_set)))
-pred_rmse
-
-#build binomial model with logit link
-
-bi_model2 = glm(pib ~ hg + hf + hs, 
-               family = binomial(link = 'logit'), data = train_set)
-summary(bi_model2)
-
-#evaluation
-
-check_model(bi_model2)
-check_distribution(bi_model2)
-plot(check_distribution(bi_model2))
-
-#predictions
-
-pred_bi2 = as.numeric(caret::RMSE(dat2$pib, predict(bi_model, newdata = test_set)))
-pred_bi2 #changing logit to probit didn't change anything
-
-#build model using beta distribution
-#this did not function without adding the 0.0000001, but you can compare all of your models using the above method
-
-be_model = betareg(pib ~ hg + hf + hs + hg, data = train_set)
-
-summary(be_model) #glm is PICKY and will throw a warning, but bi_model will fit
-
-#evaluation using performance package
-
-check_model(be_model)
-check_distribution(be_model)
-plot(check_distribution(be_model))
-
-#predictions
-
-pred_rmse = as.numeric(caret::RMSE(dat2$pib, predict(be_model, newdata = test_set)))
-pred_rmse
-```
-
-
 

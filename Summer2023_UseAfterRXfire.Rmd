@@ -33,6 +33,7 @@ library(janitor)
 library(performance)
 library(gam)
 library(mgcv)
+library(pls)
 theme_set(theme_minimal())
 ```
 
@@ -47,19 +48,32 @@ s23rx <- read_xlsx("/Volumes/Samsung_T5/BOBWHITE_DATA/Clean/SummerLocations/Summ
          hf = height_forbs,
          hs = height_shrubs,
          pib = percent_in_burned)
+
+head(s23rx)
 ```
+
+
 
 Plotting use over time
 ```{r}
 #### Plotting use over time ####
 
+# If date is not in Date format
+# s23rx$date <- as.Date(s23rx$date)
+
 s23rx %>%
-  dplyr::filter(date <= "2023-08-04") %>%
+  dplyr::filter(date <= as.Date("2023-08-04"),
+                dsf <= 120) %>%
   ggplot(aes(dsf, pib)) +
   geom_point() +
-  labs(title = "2023: Use of burned areas following prescribed fire",
-       x = "DSF",
-       y = "% in burned")
+  labs(title = "Use of burned areas following prescribed fire in 2023",
+       x = "Days since fire",
+       y = "% of sampled bobwhite in burned ") +
+  theme_bw() +
+  scale_y_continuous(labels = scales::percent_format(scale = 100)) +
+  scale_x_continuous(breaks = c(0, 30, 60, 90, 120, 150))  
+
+
 
 
 ```
@@ -69,333 +83,161 @@ Centering and scaling veg covariates
 s23rx_sc <- s23rx %>% 
   mutate_at(vars(pg:hs), .funs = function(x){as.numeric(scale(x, center = T))}) %>%
   mutate(pib = pib + 0.00001)
+
+s23rx_sc1 <- s23rx_sc %>%
+  select(pib, dsf, pg:hs)
+
+s23_rx_uniq <- s23rx_sc1[!duplicated(s23rx_sc1), ]
 ```
 
-Candidate models (betareg)
-```{r}
-#### Candidate models with betareg (post meeting) ####
-#Global model
-bmodel1 <- betareg(pib ~ pg + pf + ps + hg + hf + dsf,
-                     data = s23rx_sc,
-                     na.action = "na.pass")
 
-
-bmodel2 <- betareg(pib ~ dsf, 
-                  data = s23rx_sc,
-                  na.action = "na.pass")
-
-bmodel3<- betareg(pib ~ dsf + I(dsf^2), 
-                  data = s23rx_sc,
-                  na.action = "na.pass")
-
-bmodel4 <- betareg(pib ~ pg + pf + ps,
-                  data = s23rx_sc,
-                  na.action = "na.pass")
-
-bmodel5 <- betareg(pib ~ hg + hf + hs,
-                  data = s23rx_sc,
-                  na.action = "na.pass")
-
-
-bmodel6 <- betareg(pib ~ pg + hg + pf + hg,
-                  data = s23rx_sc,
-                  na.action = "na.pass")
-
-bmodel7 <- betareg(pib ~ ps,
-                  data = s23rx_sc,
-                  na.action = "na.pass")
-
-bmodel8 <- betareg(pib ~ 1,
-                  data = s23rx_sc,
-                  na.action = "na.pass")
-
-```
-
-Ranking candidate models (betareg)
+2023: Univariate candidate models (GAM)
 ```{r}
 
-#### Ranking betareg models ####
-# Creating a data frame to store model names and their AIC values
-model_names <- c(paste0("bmodel", 1:8))
+#### Candidate models (GAM) 2022/2023 #### 
 
-
-model_list <- list(bmodel1, bmodel2, bmodel3, bmodel4,
-                   bmodel5, bmodel6, bmodel7, bmodel8)
-
-
-model_aic <- sapply(model_list, AIC)
-model_nll <- sapply(model_list, logLik)
-
-# Combine the model names and AIC values into a data frame
-model_comparison <- data.frame(Model = model_names, AIC = model_aic, nll = - model_nll)
-
-# Sort the models by AIC value
-model_comparison_sorted <- model_comparison %>% 
-  arrange(AIC)
-
-# View the sorted data frame
-model_comparison_sorted %>% 
-  view()
-
-# Calculate the minimum AIC value among all models
-min_aic <- min(model_comparison_sorted$AIC)
-
-# Add a column for Delta AIC
-model_comparison_sorted <- model_comparison_sorted %>%
-  mutate(Delta_AIC = AIC - min_aic)
-
-# View the updated data frame
-model_comparison_sorted %>% view()
-
-model_comparison_sorted$rll <- exp(-0.5*model_comparison_sorted$Delta_AIC)
-model_comparison_sorted$weight <- model_comparison_sorted$rll/sum(model_comparison_sorted$rll)
-model_comparison_sorted$weight <- round(model_comparison_sorted$weight,3)
-
-model_comparison_sorted %>% view
-```
-
-Candidate models (GAM)
-```{r}
-#### Candidate models (GAM) 2023 #### 
-
-gmodel1 <- gam(pib ~ pg + pf + ps + hg + hf + dsf,
-                     data = s23rx_sc,
+gmodel1 <- gam(pib ~ dsf,
+                     data = s23_rx_uniq,
                      family=betar(link = "logit"),
                      na.action = "na.pass")
 
 
-gmodel2 <- gam(pib ~ dsf, 
-                  data = s23rx_sc,
-                  family = betar(link = "logit"),
-                  na.action = "na.pass")
-
-gmodel3 <- gam(pib ~ dsf + I(dsf^2), 
-                  data = s23rx_sc,
-                  family = betar(link = "logit"),
-                  na.action = "na.pass")
-
-gmodel4 <- gam(pib ~ pg + pf + ps,
-                  data = s23rx_sc,
-                  family = betar(link = "logit"),
-                  na.action = "na.pass")
-
-gmodel5 <- gam(pib ~ hg + hf + hs,
-                  family = betar(link = "logit"),
-                  data = s23rx_sc,
-                  na.action = "na.pass")
-
-
-gmodel6 <- gam(pib ~ pg + hg + pf + hg,
-                  family = betar(link = "logit"),
-                  data = s23rx_sc,
-                  na.action = "na.pass")
-
-gmodel7 <- gam(pib ~ ps,
-                   family = betar(link = "logit"),
-                  data = s23rx_sc,
-                  na.action = "na.pass")
-
-gmodel8 <- gam(pib ~ 1,
-                  family = betar(link = "logit"),
-                  data = s23rx_sc,
-                  na.action = "na.pass")
-```
-
-
-Ranking candidate models (gam)
-```{r}
-
-#### Ranking ga models ####
-# Creating a data frame to store model names and their AIC values
-model_names <- c(paste0("gmodel", 1:8))
-
-
-model_list <- list(gmodel1, gmodel2, gmodel3, gmodel4,
-                   gmodel5, gmodel6, gmodel7, gmodel8)
-
-
-model_aic <- sapply(model_list, AIC)
-model_nll <- sapply(model_list, logLik)
-
-# Combine the model names and AIC values into a data frame
-model_comparison <- data.frame(Model = model_names, AIC = model_aic, nll = - model_nll)
-
-# Sort the models by AIC value
-model_comparison_sorted <- model_comparison %>% 
-  arrange(AIC)
-
-# View the sorted data frame
-model_comparison_sorted %>% 
-  view()
-
-# Calculate the minimum AIC value among all models
-min_aic <- min(model_comparison_sorted$AIC)
-
-# Add a column for Delta AIC
-model_comparison_sorted <- model_comparison_sorted %>%
-  mutate(Delta_AIC = AIC - min_aic)
-
-# View the updated data frame
-model_comparison_sorted %>% view()
-
-model_comparison_sorted$rll <- exp(-0.5*model_comparison_sorted$Delta_AIC)
-model_comparison_sorted$weight <- model_comparison_sorted$rll/sum(model_comparison_sorted$rll)
-model_comparison_sorted$weight <- round(model_comparison_sorted$weight,3)
-
-model_comparison_sorted %>% view
-```
-
-Lets try combining 2023/23 data
-```{r}
-s22_select <- s22rx_sc %>%
-  select(DSF, pg:hs, pib)
-
-s22_select <- s22_select %>%
-  rename(dsf = DSF)
-
-s23_select <- s23rx_sc %>%
-  select(dsf, pg:hs, pib)
-
-s22_23_rx <- rbind(
-  s22_select, s23_select
-)
-```
-
-Candidate models (GAM) 2022/23
-```{r}
-#### Candidate models (GAM)  FOR BOTH YEARS #### 
-
-gmodel1 <- gam(pib ~ pg + pf + ps + hg + hf + dsf,
-                     data = s22_23_rx,
-                     family=betar(link = "logit"),
-                     na.action = "na.pass")
-
-
-gmodel2 <- gam(pib ~ dsf, 
-                  data = s22_23_rx,
-                  family = betar(link = "logit"),
-                  na.action = "na.pass")
-
-gmodel3 <- gam(pib ~ dsf + I(dsf^2), 
-                  data = s22_23_rx,
-                  family = betar(link = "logit"),
-                  na.action = "na.pass")
-
-gmodel4 <- gam(pib ~ pg + pf + ps,
-                  data = s22_23_rx,
-                  family = betar(link = "logit"),
-                  na.action = "na.pass")
-
-gmodel5 <- gam(pib ~ hg + hf + hs,
-                  family = betar(link = "logit"),
-                  data = s22_23_rx,
-                  na.action = "na.pass")
-
-
-gmodel6 <- gam(pib ~ pg + hg + pf + hg,
-                  family = betar(link = "logit"),
-                  data = s22_23_rx,
-                  na.action = "na.pass")
-
-gmodel7 <- gam(pib ~ ps,
-                   family = betar(link = "logit"),
-                  data = s22_23_rx,
-                  na.action = "na.pass")
-
-gmodel8 <- gam(pib ~ 1,
-                  family = betar(link = "logit"),
-                  data = s22_23_rx,
-                  na.action = "na.pass")
-```
-
-
-Ranking candidate models (gam)
-```{r}
-
-#### Ranking gam models 2022/23 ####
-# Creating a data frame to store model names and their AIC values
-model_names <- c(paste0("gmodel", 1:8))
-
-
-model_list <- list(gmodel1, gmodel2, gmodel3, gmodel4,
-                   gmodel5, gmodel6, gmodel7, gmodel8)
-
-
-model_aic <- sapply(model_list, AIC)
-model_nll <- sapply(model_list, logLik)
-
-# Combine the model names and AIC values into a data frame
-model_comparison <- data.frame(Model = model_names, AIC = model_aic, nll = - model_nll)
-
-# Sort the models by AIC value
-model_comparison_sorted <- model_comparison %>% 
-  arrange(AIC)
-
-# View the sorted data frame
-model_comparison_sorted %>% 
-  view()
-
-# Calculate the minimum AIC value among all models
-min_aic <- min(model_comparison_sorted$AIC)
-
-# Add a column for Delta AIC
-model_comparison_sorted <- model_comparison_sorted %>%
-  mutate(Delta_AIC = AIC - min_aic)
-
-# View the updated data frame
-model_comparison_sorted %>% view()
-
-model_comparison_sorted$rll <- exp(-0.5*model_comparison_sorted$Delta_AIC)
-model_comparison_sorted$weight <- model_comparison_sorted$rll/sum(model_comparison_sorted$rll)
-model_comparison_sorted$weight <- round(model_comparison_sorted$weight,3)
-
-model_comparison_sorted %>% view
-```
-
-Single variable candidate models (GAM)
-```{r}
-#### Candidate models (GAM) 2023 #### 
-
-gmodel1 <- gam(pib ~ pg,
-                     data = s23rx_sc,
-                     family=betar(link = "logit"),
-                     na.action = "na.pass")
-
-
-gmodel2 <- gam(pib ~ dsf, 
-                  data = s23rx_sc,
+gmodel2 <- gam(pib ~ pg, 
+                  data = s23_rx_uniq,
                   family = betar(link = "logit"),
                   na.action = "na.pass")
 
 gmodel3 <- gam(pib ~ pf, 
-                  data = s23rx_sc,
+                  data = s23_rx_uniq,
                   family = betar(link = "logit"),
                   na.action = "na.pass")
 
 gmodel4 <- gam(pib ~ ps,
-                  data = s23rx_sc,
+                  data = s23_rx_uniq,
                   family = betar(link = "logit"),
                   na.action = "na.pass")
 
 gmodel5 <- gam(pib ~ hg,
                   family = betar(link = "logit"),
-                  data = s23rx_sc,
+                  data = s23_rx_uniq,
                   na.action = "na.pass")
 
 
 gmodel6 <- gam(pib ~ hf,
                   family = betar(link = "logit"),
-                  data = s23rx_sc,
+                  data = s23_rx_uniq,
                   na.action = "na.pass")
 
 gmodel7 <- gam(pib ~ hs,
                    family = betar(link = "logit"),
-                  data = s23rx_sc,
+                  data = s23_rx_uniq,
                   na.action = "na.pass")
 
 gmodel8 <- gam(pib ~ 1,
                   family = betar(link = "logit"),
-                  data = s23rx_sc,
+                  data = s23_rx_uniq,
+                  na.action = "na.pass")
+```
+
+Ranking candidate models (GAM)
+```{r}
+
+#### Ranking gam models 2022/23 ####
+# Creating a data frame to store model names and their AIC values
+model_names <- c(paste0("gmodel", 1:8))
+
+
+model_list <- list(gmodel1, gmodel2, gmodel3, gmodel4,
+                   gmodel5, gmodel6, gmodel7, gmodel8)
+
+
+model_aic <- sapply(model_list, AIC)
+model_nll <- sapply(model_list, logLik)
+
+# Combine the model names and AIC values into a data frame
+model_comparison <- data.frame(Model = model_names, AIC = model_aic, nll = - model_nll)
+
+# Sort the models by AIC value
+model_comparison_sorted <- model_comparison %>% 
+  arrange(AIC)
+
+# View the sorted data frame
+model_comparison_sorted %>% 
+  view()
+
+# Calculate the minimum AIC value among all models
+min_aic <- min(model_comparison_sorted$AIC)
+
+# Add a column for Delta AIC
+model_comparison_sorted <- model_comparison_sorted %>%
+  mutate(Delta_AIC = AIC - min_aic)
+
+# View the updated data frame
+model_comparison_sorted %>% view()
+
+model_comparison_sorted$rll <- exp(-0.5*model_comparison_sorted$Delta_AIC)
+model_comparison_sorted$weight <- model_comparison_sorted$rll/sum(model_comparison_sorted$rll)
+model_comparison_sorted$weight <- round(model_comparison_sorted$weight,3)
+
+model_comparison_sorted %>% view
+
+#write_xlsx(model_comparison_sorted, "/Users/jeffgrayum/Downloads/model_comparison23.xlsx")
+```
+
+Let's try combining 2023/23 data
+```{r}
+s22_rx_uniq <- s22_rx_uniq %>%
+  rename(dsf = DSF)
+
+s22_23_rx_unique <- rbind(
+  s22_rx_uniq, s23_rx_uniq
+)
+```
+
+Univariate candidate models (GAM) 2022/23
+```{r}
+#### Candidate models (GAM) 2022/2023 #### 
+
+gmodel1 <- gam(pib ~ dsf,
+                     data = s22_23_rx_unique,
+                     family=betar(link = "logit"),
+                     na.action = "na.pass")
+
+
+gmodel2 <- gam(pib ~ pg, 
+                  data = s22_23_rx_unique,
+                  family = betar(link = "logit"),
+                  na.action = "na.pass")
+
+gmodel3 <- gam(pib ~ pf, 
+                  data = s22_23_rx_unique,
+                  family = betar(link = "logit"),
+                  na.action = "na.pass")
+
+gmodel4 <- gam(pib ~ ps,
+                  data = s22_23_rx_unique,
+                  family = betar(link = "logit"),
+                  na.action = "na.pass")
+
+gmodel5 <- gam(pib ~ hg,
+                  family = betar(link = "logit"),
+                  data = s22_23_rx_unique,
+                  na.action = "na.pass")
+
+
+gmodel6 <- gam(pib ~ hf,
+                  family = betar(link = "logit"),
+                  data = s22_23_rx_unique,
+                  na.action = "na.pass")
+
+gmodel7 <- gam(pib ~ hs,
+                   family = betar(link = "logit"),
+                  data = s22_23_rx_unique,
+                  na.action = "na.pass")
+
+gmodel8 <- gam(pib ~ 1,
+                  family = betar(link = "logit"),
+                  data = s22_23_rx_unique,
                   na.action = "na.pass")
 ```
 
@@ -440,4 +282,383 @@ model_comparison_sorted$weight <- model_comparison_sorted$rll/sum(model_comparis
 model_comparison_sorted$weight <- round(model_comparison_sorted$weight,3)
 
 model_comparison_sorted %>% view
+
+#write_xlsx(model_comparison_sorted, "/Users/jeffgrayum/Downloads/model_comparison22_23fixed.xlsx")
 ```
+
+Making predict plot with model 6 (top model)
+```{r}
+hf_values <- seq(min(s22_23_rx_unique$hf, na.rm = TRUE), 
+                 max(s22_23_rx_unique$hf, na.rm = TRUE), 
+                 length.out = 1000)
+
+hf_df <- data.frame(
+  hf = hf_values
+)
+
+hf_pred <- data.frame(predict(gmodel6, newdata = hf_df, type = "response", se.fit = TRUE))
+
+
+hf_pred$lowCI = (hf_pred$fit - (1.96 * hf_pred$se.fit))
+hf_pred$upperCI = (hf_pred$fit + (1.96 * hf_pred$se.fit))
+
+#Before plotting, let's un-center and scale the x-axis, so it is easy to interpret.
+#First, we must determine mean and SD
+hf_mean <- mean(s22_23_rx_unique$hf, na.rm = TRUE)
+hf_sd <- sd(s22_23_rx_unique$hf, na.rm = TRUE)
+
+
+
+
+hf_pred %>%
+  ggplot(aes(hf_values, y = fit)) +
+  geom_line() +
+  geom_ribbon(aes(ymin = lowCI, ymax = upperCI), fill = "red", alpha = 0.1) +
+  labs(x = "Height of forbs (centered and scaled)",
+       y = "% Bobwhite predicted in burned units",
+       title = "Use of burned units after prescribed fire predicted by forb height") +
+  scale_y_continuous(labels = scales::percent) +
+  theme_bw() 
+```
+
+
+Let's try seeing if we can predict prob of burned/unburned by using distance to edge.
+```{r}
+gmodel_dte <- gam(burned ~ distance_to_edge,
+                 family = betar(link = "logit"),
+                 data = s23rx_sc,
+                 na.action = "na.pass")
+
+dte_values <- seq(min(s23rx_sc$distance_to_edge, na.rm = TRUE), 
+                 max(s23rx_sc$distance_to_edge, na.rm = TRUE), 
+                 length.out = 1000)
+
+dte_df <- data.frame(
+  distance_to_edge = dte_values
+)
+
+dte_pred <- data.frame(predict(gmodel_dte, newdata = dte_df, type = "response", se.fit = TRUE))
+
+
+dte_pred$lowCI = (dte_pred$fit - (1.96 * dte_pred$se.fit))
+dte_pred$upperCI = (dte_pred$fit + (1.96 * dte_pred$se.fit))
+
+dte_pred %>%
+  ggplot(aes(dte_values, fit)) +
+  geom_line() +
+  geom_ribbon(aes(ymin = lowCI, ymax = upperCI), fill = "blue", alpha = 0.1) +
+  labs(x = "Distance to edge (m) of burn compartment",
+       y = "Probability of location falling in burned area",
+       title = "Predicted probability of bobwhite being in burned area based on distance to edge") +
+  scale_y_continuous(labels = percent)
+```
+
+
+Now, let's see if we can predict probability of use based on distance to edge of burned compartments. We will need to important real/random locations from Ch1 analysis.
+```{r}
+#### Adding dte to real/random points ####
+
+#Importing map of burned areas, summer 2023.
+#Reading burn compartments in again, but as an sf object
+burn_compartments_2023 <- st_read("/Volumes/Samsung_T5/BOBWHITE_DATA/Maps/2023_burn_compartments/burn 2023 map/NoAG_NoHW/2023_burn_units_NoAg_NoHW.shp")
+
+# Converting burn_compartments_2022 polygons to line geometries that represent their boundaries. This is necessary to calc min distances later.
+burn_compartment_boundaries <- st_boundary(burn_compartments_2023)
+
+# Converting tibble of points to an sf object
+s23_locs_sf <- st_as_sf(rsfData_modified_summer2023, coords = c("x_", "y_"), crs = st_crs(burn_compartments_2023))
+
+# Calculating the distance from each point to the nearest line boundary of the burn compartments, storing it in matrix
+distance_matrix <- st_distance(s23_locs_sf, burn_compartment_boundaries)
+
+# Applying the function min() to each row (1 does this -- we'd use 2 for columns) in the distance matrix
+min_distances <- apply(distance_matrix, 1, min)
+
+# Add the minimum distance to the original tibble as a new column
+rsfData_modified_summer2023$distance_to_edge <- min_distances
+
+
+#Now, we can predict real/random
+gmodel_prob_use <- gam(case ~ distance_to_edge,
+                 family = betar(link = "logit"),
+                 data = rsfData_modified_summer2023,
+                 na.action = "na.pass")  
+  
+  
+dte_values <- seq(min(rsfData_modified_summer2023$distance_to_edge, na.rm = TRUE), 
+                 max(rsfData_modified_summer2023$distance_to_edge, na.rm = TRUE), 
+                 length.out = 1000)
+
+dte_df <- data.frame(
+  distance_to_edge = dte_values
+)
+
+prob_use_pred <- data.frame(predict(gmodel_prob_use, newdata = dte_df, type = "response", se.fit = TRUE))
+
+
+prob_use_pred$lowCI = (prob_use_pred$fit - (1.96 * prob_use_pred$se.fit))
+prob_use_pred$upperCI = (prob_use_pred$fit + (1.96 * prob_use_pred$se.fit))
+
+prob_use_pred %>%
+  ggplot(aes(dte_values, fit)) +
+  geom_line() +
+  geom_ribbon(aes(ymin = lowCI, ymax = upperCI), fill = "blue", alpha = 0.1) +
+  labs(x = "Distance to burn edge (m)",
+       y = "Probability of use",
+       title = "Predicted probability of use based on distance to edge") +
+  scale_y_continuous(labels = percent)
+
+```
+
+
+```{r}
+#### Plotting veg data vs percent in burned ####
+s23rx_piv <- s23rx %>%
+  select(pg:hs, pib) %>%
+  pivot_longer(pg:hs, names_to = "Measurement", values_to = "Value")
+
+
+s23rx_piv %>% 
+  dplyr::filter(Measurement %in% c("pg", "pf", "ps")) %>%
+  mutate(Measurement = factor(Measurement, levels = c("pg", "pf", "ps"))) %>%
+  ggplot(aes(Value, pib)) +
+  geom_point(color = "Midnight Blue") +
+  facet_wrap(~ Measurement, scales = "free") +
+  labs(x = "% cover",
+       y = "% of birds in burned area",
+       title = "2023: Percent cover of grasses, forbs, and shrubs vs percent of birds in burned areas") +
+  theme_bw()
+
+s23rx_piv %>% 
+  dplyr::filter(Measurement %in% c("hg", "hf", "hs")) %>%
+  mutate(Measurement = factor(Measurement, levels = c("hg", "hf", "hs"))) %>%
+  ggplot(aes(Value, pib)) +
+  geom_point(color = "Midnight Blue") +
+  facet_wrap(~ Measurement, scales = "free") +
+  labs(x = "Height (cm)",
+       y = "% of birds in burned area",
+       title = "2023: Height of grasses, forbs and shrubs vs percent of birds in burned areas") +
+  theme_bw()
+
+
+s23rx %>%
+  ggplot(aes(pg, pib)) +
+  geom_point(color = "Midnight Blue") +
+  labs(x = "% cover of grasses",
+       y = "Perenct of birds in burned area",
+       title = "Percent cover grasses vs Percent of birds in burned areas") +
+  theme_bw()
+
+s23rx %>%
+  ggplot(aes(pf, pib)) +
+  geom_point(color = "Midnight Blue") +
+  labs(x = "% cover of forbs",
+       y = "Perenct of birds in burned area",
+       title = "Percent cover forbs vs Percent of birds in burned areas") +
+  theme_bw()
+
+
+s23rx %>%
+  ggplot(aes(ps, pib)) +
+  geom_point(color = "Midnight Blue") +
+  labs(x = "% cover of shrubs",
+       y = "Perenct of birds in burned area",
+       title = "Percent cover shrubs vs Percent of birds in burned areas")
+
+s23rx %>%
+  ggplot(aes(hg, pib)) +
+  geom_point(color = "Midnight Blue") +
+  labs(x = "Height of grasses (cm)",
+       y = "Perenct of birds in burned area",
+       title = "Height of grasses vs Percent of birds in burned areas")
+
+s23rx %>%
+  ggplot(aes(hf, pib)) +
+  geom_point(color = "Midnight Blue") +
+  labs(x = "Height of forbs (cm)",
+       y = "Perenct of birds in burned area",
+       title = "Height of forbs vs Percent of birds in burned areas")
+
+s23rx %>%
+  ggplot(aes(hs, pib)) +
+  geom_point(color = "Midnight Blue") +
+  labs(x = "Height of shrubs (cm)",
+       y = "Perenct of birds in burned area",
+       title = "Height of shrubs vs Percent of birds in burned areas")
+  
+```
+
+
+Playing with PCA
+```{r}
+#### PCA ####
+veg.pca <- prcomp(s23rx_sc %>% select(pg:hs))
+
+summary(veg.pca)
+
+fviz_eig(veg.pca)
+
+#fviz_pca_ind(veg.pca,
+            # col.ind = "cos2", # Color by the quality of representation
+            # gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+             #repel = TRUE)     # Avoid text overlapping
+             
+
+fviz_pca_var(veg.pca,
+             col.var = "contrib", # Color by contributions to the PC
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+           repel = TRUE)
+
+fviz_pca_biplot(veg.pca, repel = TRUE,
+               col.var = "#2E9FDF", # Variables color
+               col.ind = "#696969"  # Individuals color
+               )
+
+
+# Eigenvalues
+eig.val <- get_eigenvalue(veg.pca)
+eig.val
+  
+# Results for Variables
+res.var <- get_pca_var(veg.pca)
+res.var$coord          # Coordinates
+res.var$contrib        # Contributions to the PCs
+res.var$cos2           # Quality of representation 
+# Results for individuals
+res.ind <- get_pca_ind(veg.pca)
+res.ind$coord          # Coordinates
+res.ind$contrib        # Contributions to the PCs
+res.ind$cos2           # Quality of representation 
+```
+
+Partial least squares
+```{r}
+#### PLSR ####
+
+set.seed(123)
+plsr_model <- plsr(pib ~ pg + pf + ps + hg + hf + hs +dsf,
+                   data = s23rx_sc,
+                   scale = FALSE,
+                   na.action = "na.pass",
+                   validation = "CV")
+                   
+
+#97.11 % of the varation of our model can be explained by using only one covariate...
+summary(plsr_model)
+
+validationplot(plsr_model, val.type="RMSEP")
+validationplot(plsr_model, val.type="R2")
+```
+
+importing temp data
+```{r}
+
+temp23 <- read_csv("/Volumes/Samsung_T5/BOBWHITE_DATA/Clean/Other/IchTempData.csv") %>%
+  clean_names() %>%
+  mutate(date = as.Date(date, tryFormats = "%m-%d-%Y")) 
+
+temp23f <- temp23[temp23$date %in% seq(as.Date("2023-03-22"), by="day",length.out=143),]
+
+temp23f <- temp23f %>% 
+  select(date, air_temp_max_c)
+
+start_date <- ymd("2023-03-21")
+
+temp23f$dsf <- as.numeric(temp23f$date - start_date)
+
+s23rx <- s23rx %>%
+  left_join(temp23f %>% select(air_temp_max_c, dsf), by = "dsf")
+
+s23temp <- s23rx %>%
+  select(dsf, air_temp_max_c)
+
+s23temp$year <- 2023
+
+s22temp <- s22temp %>%
+  rename(dsf = DSF)
+
+s22_23_temp <- rbind(
+  s22temp, s23temp
+)
+
+s22_23_temp <- s22_23_temp %>%
+  rename(Year = year) %>%
+  mutate(Year = as.factor(Year))
+
+s22_23_temp %>% 
+  dplyr::filter(dsf > 1,
+                dsf <= 120) %>%
+  ggplot(aes(dsf, (air_temp_max_c * 1.8 + 32), color = Year)) +
+  geom_smooth(method = "loess", se = F) +
+  labs(x = "Days since fire",
+       y = "Maximum daily temperature (F)",
+       title = "Maximum daily temperatures trends following prescribed fire") +
+    scale_x_continuous(breaks = c(0, 30, 60, 90, 120, 150))  +
+  theme_bw()
+```
+
+```{r}
+
+degree_label <- paste0("Max ambient temp (", "\u00B0", "F)")
+
+# Color mapping
+color_map <- setNames(c("red", "black", "blue"), c(degree_label, "% Bobwhite in burned units", "Bobwhite thermal stress threshold"))
+
+# Assuming s22rx exists and has the relevant columns
+# Create dashed line data
+dashed_line_data <- data.frame(dsf = c(min(s22rx$dsf), max(s22rx$dsf)),
+                               y = c(86.5 / 2, 86.5 / 2))
+
+s23rx %>%
+  dplyr::filter(date <= "2023-08-04",
+                dsf < 120) %>%
+  ggplot(aes(x = dsf)) +
+  geom_line(aes(y = (air_temp_max_c * 1.8 + 32) / 2, color = degree_label)) +
+  geom_point(aes(y = pib * 100, color = "% Bobwhite in burned units")) +
+  geom_line(data = dashed_line_data, aes(y = y, color = "Bobwhite thermal stress threshold"), linetype = "dashed") +
+  scale_y_continuous(
+    name = "% Bobwhite in burned units",
+    sec.axis = sec_axis(~ . * 2, name = degree_label)
+  ) +
+  scale_color_manual(
+    values = color_map,
+    name = ""
+  ) +
+  labs(x = "Days since fire",
+       y = "% sampled bobwhite in burned units",
+       title = "Use of burned units after prescribed fire\nand max ambient temp (2023)") +
+  theme_bw() +
+  scale_x_continuous(breaks = c(0, 30, 60, 90, 120))
+
+
+#* 1.8 + 32) / 2
+```
+
+
+```{r}
+s23dist <- s23rx %>%
+  select(burned, distance_to_edge)
+
+s22_s23_dist <- rbind(s22dist, s23dist)
+
+s22_s23_dist %>%
+  rename(Location = burned) %>%
+  mutate(Location = factor(Location, labels = c("Unburned", "Burned"))) %>%
+  ggplot(aes(x = distance_to_edge, fill = Location)) +
+  geom_histogram(alpha = 0.8) +
+  labs(x = "Distance to edge of burned unit (m)",
+       y = "Count",
+       title = "Distance of bobwhite locations to edge of burned units") +
+  theme_bw()
+
++
+  scale_x_continuous(breaks = c(0, 100, 200, 300, 400, 500, 600)) +
+  theme(panel.grid.minor = element_blank())
+
+s22_s23_dist %>%
+  dplyr::filter(burned == 0) %>%
+  ggplot(aes(x = distance_to_edge)) +
+  geom_histogram()
+```
+
+
