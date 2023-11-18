@@ -251,51 +251,88 @@ csveg <- s22rx_sc %>%
 cor(csveg)
 ```
 
+Adding in temp data
+```{r}
+temp22 <- read_csv("/Volumes/Samsung_T5/BOBWHITE_DATA/Clean/Other/IchTempData.csv") %>%
+  clean_names() %>%
+  mutate(date = as.Date(date, tryFormats = "%m-%d-%Y")) 
+
+temp22 <- temp22[temp22$date %in% seq(as.Date("2022-04-11"), by="day",length.out=116),]
+
+start_date22 <- ymd("2022-04-11")
+
+temp22$DSF <- as.numeric(temp22$date - start_date22)
+
+
+s22_rx_uniq_temp <- s22_rx_uniq %>%
+  left_join(temp22, by = "DSF") %>%
+  select(pib:date, air_temp_max_c)
+
+s22_rx_uniq_temp$air_temp_max_c <- ifelse(is.na(s22_rx_uniq_temp$air_temp_max_c), 27.2, s22_rx_uniq_temp$air_temp_max_c)
+
+s22_rx_uniq_temp$year <- 2022
+
+s22_rx_uniq_temp_mod <- s22_rx_uniq_temp %>%
+  mutate_at(vars(air_temp_max_c), .funs = function(x){as.numeric(scale(x, center = T))})
+
+```
+
 Univarariate candidate models (GAM)
 ```{r}
 #### Candidate models (GAM) 2022 #### 
 
 gmodel1 <- gam(pib ~ pg,
-                     data = s22_rx_uniq,
+                     data = s22_rx_uniq_temp_mod,
                      family=betar(link = "logit"),
                      na.action = "na.pass")
 
 
-gmodel2 <- gam(pib ~ DSF, 
-                  data = s22_rx_uniq,
+gmodel2 <- gam(pib ~ dsf, 
+                  data = s22_rx_uniq_temp_mod,
                   family = betar(link = "logit"),
                   na.action = "na.pass")
 
 gmodel3 <- gam(pib ~ pf, 
-                  data = s22_rx_uniq,
+                  data = s22_rx_uniq_temp_mod,
                   family = betar(link = "logit"),
                   na.action = "na.pass")
 
 gmodel4 <- gam(pib ~ ps,
-                  data = s22_rx_uniq,
+                  data = s22_rx_uniq_temp_mod,
                   family = betar(link = "logit"),
                   na.action = "na.pass")
 
 gmodel5 <- gam(pib ~ hg,
                   family = betar(link = "logit"),
-                  data = s22_rx_uniq,
+                  data = s22_rx_uniq_temp_mod,
                   na.action = "na.pass")
 
 
 gmodel6 <- gam(pib ~ hf,
                   family = betar(link = "logit"),
-                  data = s22_rx_uniq,
+                  data = s22_rx_uniq_temp_mod,
                   na.action = "na.pass")
 
 gmodel7 <- gam(pib ~ hs,
                    family = betar(link = "logit"),
-                  data = s22_rx_uniq,
+                  data = s22_rx_uniq_temp_mod,
                   na.action = "na.pass")
 
 gmodel8 <- gam(pib ~ 1,
                   family = betar(link = "logit"),
-                  data = s22_rx_uniq,
+                  data = s22_rx_uniq_temp_mod,
                   na.action = "na.pass")
+
+gmodel9 <- gam(pib ~  dsf + air_temp_max_c,
+                  family = betar(link = "logit"),
+                  data = s22_rx_uniq_temp_mod,
+                  na.action = "na.pass")
+
+gmodel10 <- gam(pib ~ air_temp_max_c,
+                  family = betar(link = "logit"),
+                  data = s22_rx_uniq_temp_mod,
+                  na.action = "na.pass")
+
 ```
 
 Ranking candidate models (gam)
@@ -303,11 +340,11 @@ Ranking candidate models (gam)
 
 #### Ranking gam models 2022 ####
 # Creating a data frame to store model names and their AIC values
-model_names <- c(paste0("gmodel", 1:8))
+model_names <- c(paste0("gmodel", 1:10))
 
 
 model_list <- list(gmodel1, gmodel2, gmodel3, gmodel4,
-                   gmodel5, gmodel6, gmodel7, gmodel8)
+                   gmodel5, gmodel6, gmodel7, gmodel8, gmodel9,gmodel10)
 
 
 model_aic <- sapply(model_list, AIC)
@@ -591,18 +628,20 @@ start_date22 <- ymd("2022-04-11")
 temp22f$DSF <- as.numeric(temp22f$date - start_date22)
 
 s22rx <- s22rx %>%
-  left_join(temp22f %>% select(air_temp_max_c, DSF), by = "DSF")
+  left_join(temp22f, join_by = "DSF")
 
 s22temp <- s22rx %>%
   select(DSF, air_temp_max_c)
 
 s22temp$year <- 2022
+
+s22temp$air_temp_max_c <- ifelse(is.na(s22temp$air_temp_max_c), 27.2, s22temp$air_temp_max_c)
 ```
 
 ```{r}
 s22rx %>%
   dplyr::filter(date <= "2022-08-04",
-                DSF > 1) %>%
+                ) %>%
   ggplot(aes(x = DSF)) +
   geom_line(aes(y = (air_temp_max_c, color = "Max Temp (C)")) +  # Divide by 2 to align with pib
   geom_point(aes(y = pib * 100, color = "% Bobwhite in Burned Area")) +
@@ -655,6 +694,31 @@ s22rx %>%
        title = paste0("Use of burned units after prescribed fire\nand max ambient temp (2022) ")) +
   theme_bw() +
   scale_x_continuous(breaks = c(0, 30, 60, 90, 120, 150))
+
+```
+
+```{r}
+
+#### Making a temp data frame ####
+s22_rx_uniq_temp <- s22_rx_uniq %>%
+  left_join(s22temp, by = join_by(DSF), relationship = "many-to-many")
+
+s22_rx_uniq_temp_mod <- s22_rx_uniq_temp %>%
+  mutate_at(vars(air_temp_max_c), .funs = function(x){as.numeric(scale(x, center = T))})
+
+gmodel9 <- gam(pib ~  DSF + air_temp_max_c,
+                  family = betar(link = "logit"),
+                  data = s22_rx_uniq_temp_mod,
+                  na.action = "na.pass")
+
+gmodel10 <- gam(pib ~  air_temp_max_c,
+                  family = betar(link = "logit"),
+                  data = s22_rx_uniq_temp_mod,
+                  na.action = "na.pass")
+
+summary(gmodel9)
+
+
 
 ```
 

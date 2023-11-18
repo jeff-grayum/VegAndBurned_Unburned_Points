@@ -74,8 +74,6 @@ s23rx %>%
   scale_x_continuous(breaks = c(0, 30, 60, 90, 120, 150))  
 
 
-
-
 ```
 
 Centering and scaling veg covariates
@@ -90,65 +88,103 @@ s23rx_sc1 <- s23rx_sc %>%
 s23_rx_uniq <- s23rx_sc1[!duplicated(s23rx_sc1), ]
 ```
 
+Adding in temp data
+```{r}
+#### importing temp data ####
+temp23 <- read_csv("/Volumes/Samsung_T5/BOBWHITE_DATA/Clean/Other/IchTempData.csv") %>%
+  clean_names() %>%
+  mutate(date = as.Date(date, tryFormats = "%m-%d-%Y")) 
+
+temp23 <- temp23[temp23$date %in% seq(as.Date("2023-03-22"), by="day",length.out=143),]
+
+temp23 <- temp23 %>% 
+  select(date, air_temp_max_c)
+
+start_date_23 <- ymd("2023-03-21")
+
+temp23$dsf <- as.numeric(temp23$date - start_date_23)
+
+s23_rx_uniq_temp <- s23_rx_uniq %>%
+  left_join(temp23, by = "dsf")
+
+
+s23_rx_uniq_temp$year <- 2023
+
+s23_rx_uniq_temp_mod <- s23_rx_uniq_temp %>%
+  mutate_at(vars(air_temp_max_c), .funs = function(x){as.numeric(scale(x, center = T))})
+```
+
 
 2023: Univariate candidate models (GAM)
 ```{r}
 
-#### Candidate models (GAM) 2022/2023 #### 
+#### Candidate models (GAM) 2023 #### 
 
 gmodel1 <- gam(pib ~ dsf,
-                     data = s23_rx_uniq,
+                     data = s23_rx_uniq_temp_mod,
                      family=betar(link = "logit"),
                      na.action = "na.pass")
 
 
 gmodel2 <- gam(pib ~ pg, 
-                  data = s23_rx_uniq,
+                  data = s23_rx_uniq_temp_mod,
                   family = betar(link = "logit"),
                   na.action = "na.pass")
 
 gmodel3 <- gam(pib ~ pf, 
-                  data = s23_rx_uniq,
+                  data = s23_rx_uniq_temp_mod,
                   family = betar(link = "logit"),
                   na.action = "na.pass")
 
 gmodel4 <- gam(pib ~ ps,
-                  data = s23_rx_uniq,
+                  data = s23_rx_uniq_temp_mod,
                   family = betar(link = "logit"),
                   na.action = "na.pass")
 
 gmodel5 <- gam(pib ~ hg,
                   family = betar(link = "logit"),
-                  data = s23_rx_uniq,
+                  data = s23_rx_uniq_temp_mod,
                   na.action = "na.pass")
 
 
 gmodel6 <- gam(pib ~ hf,
                   family = betar(link = "logit"),
-                  data = s23_rx_uniq,
+                  data = s23_rx_uniq_temp_mod,
                   na.action = "na.pass")
 
 gmodel7 <- gam(pib ~ hs,
                    family = betar(link = "logit"),
-                  data = s23_rx_uniq,
+                  data = s23_rx_uniq_temp_mod,
                   na.action = "na.pass")
 
 gmodel8 <- gam(pib ~ 1,
                   family = betar(link = "logit"),
-                  data = s23_rx_uniq,
+                  data = s23_rx_uniq_temp_mod,
+                  na.action = "na.pass")
+
+gmodel9 <- gam(pib ~  dsf + air_temp_max_c,
+                  family = betar(link = "logit"),
+                  data = s23_rx_uniq_temp_mod,
+                  na.action = "na.pass")
+
+
+
+gmodel10 <- gam(pib ~ air_temp_max_c,
+                  family = betar(link = "logit"),
+                  data = s23_rx_uniq_temp_mod,
                   na.action = "na.pass")
 ```
 
 Ranking candidate models (GAM)
 ```{r}
 
-#### Ranking gam models 2022/23 ####
+#### Ranking gam models 2023 ####
 # Creating a data frame to store model names and their AIC values
-model_names <- c(paste0("gmodel", 1:8))
+model_names <- c(paste0("gmodel", 1:10))
 
 
 model_list <- list(gmodel1, gmodel2, gmodel3, gmodel4,
-                   gmodel5, gmodel6, gmodel7, gmodel8)
+                   gmodel5, gmodel6, gmodel7, gmodel8, gmodel9, gmodel10)
 
 
 model_aic <- sapply(model_list, AIC)
@@ -192,6 +228,11 @@ s22_rx_uniq <- s22_rx_uniq %>%
 s22_23_rx_unique <- rbind(
   s22_rx_uniq, s23_rx_uniq
 )
+
+s22_rx_uniq_temp_mod <- s22_rx_uniq_temp_mod %>%
+  rename(dsf = DSF)
+
+s22_23_temp_mod <- rbind(s22_rx_uniq_temp_mod, s23_rx_uniq_temp_mod)
 ```
 
 Univariate candidate models (GAM) 2022/23
@@ -199,46 +240,60 @@ Univariate candidate models (GAM) 2022/23
 #### Candidate models (GAM) 2022/2023 #### 
 
 gmodel1 <- gam(pib ~ dsf,
-                     data = s22_23_rx_unique,
+                     data = s22_23_temp_mod,
                      family=betar(link = "logit"),
                      na.action = "na.pass")
 
 
 gmodel2 <- gam(pib ~ pg, 
-                  data = s22_23_rx_unique,
+                  data = s22_23_temp_mod,
                   family = betar(link = "logit"),
                   na.action = "na.pass")
 
 gmodel3 <- gam(pib ~ pf, 
-                  data = s22_23_rx_unique,
+                  data = s22_23_temp_mod,
                   family = betar(link = "logit"),
                   na.action = "na.pass")
 
 gmodel4 <- gam(pib ~ ps,
-                  data = s22_23_rx_unique,
+                  data = s22_23_temp_mod,
                   family = betar(link = "logit"),
                   na.action = "na.pass")
 
 gmodel5 <- gam(pib ~ hg,
                   family = betar(link = "logit"),
-                  data = s22_23_rx_unique,
+                  data = s22_23_temp_mod,
                   na.action = "na.pass")
 
 
 gmodel6 <- gam(pib ~ hf,
                   family = betar(link = "logit"),
-                  data = s22_23_rx_unique,
+                  data = s22_23_temp_mod,
                   na.action = "na.pass")
+
 
 gmodel7 <- gam(pib ~ hs,
                    family = betar(link = "logit"),
-                  data = s22_23_rx_unique,
+                  data = s22_23_temp_mod,
                   na.action = "na.pass")
 
 gmodel8 <- gam(pib ~ 1,
                   family = betar(link = "logit"),
-                  data = s22_23_rx_unique,
+                  data = s22_23_temp_mod,
                   na.action = "na.pass")
+
+gmodel9 <- gam(pib ~  dsf + air_temp_max_c,
+                  family = betar(link = "logit"),
+                  data = s22_23_temp_mod,
+                  na.action = "na.pass")
+
+
+
+gmodel10 <- gam(pib ~ air_temp_max_c,
+                  family = betar(link = "logit"),
+                  data = s22_23_temp_mod,
+                  na.action = "na.pass")
+
 ```
 
 Ranking candidate models (gam)
@@ -246,11 +301,11 @@ Ranking candidate models (gam)
 
 #### Ranking gam models 2022/23 ####
 # Creating a data frame to store model names and their AIC values
-model_names <- c(paste0("gmodel", 1:8))
+model_names <- c(paste0("gmodel", 1:11))
 
 
 model_list <- list(gmodel1, gmodel2, gmodel3, gmodel4,
-                   gmodel5, gmodel6, gmodel7, gmodel8)
+                   gmodel5, gmodel6, gmodel7, gmodel8, gmodel9, gmodel10, gmodel11)
 
 
 model_aic <- sapply(model_list, AIC)
@@ -550,36 +605,7 @@ validationplot(plsr_model, val.type="RMSEP")
 validationplot(plsr_model, val.type="R2")
 ```
 
-importing temp data
-```{r}
 
-temp23 <- read_csv("/Volumes/Samsung_T5/BOBWHITE_DATA/Clean/Other/IchTempData.csv") %>%
-  clean_names() %>%
-  mutate(date = as.Date(date, tryFormats = "%m-%d-%Y")) 
-
-temp23f <- temp23[temp23$date %in% seq(as.Date("2023-03-22"), by="day",length.out=143),]
-
-temp23f <- temp23f %>% 
-  select(date, air_temp_max_c)
-
-start_date <- ymd("2023-03-21")
-
-temp23f$dsf <- as.numeric(temp23f$date - start_date)
-
-s23rx <- s23rx %>%
-  left_join(temp23f %>% select(air_temp_max_c, dsf), by = "dsf")
-
-s23temp <- s23rx %>%
-  select(dsf, air_temp_max_c)
-
-s23temp$year <- 2023
-
-s22temp <- s22temp %>%
-  rename(dsf = DSF)
-
-s22_23_temp <- rbind(
-  s22temp, s23temp
-)
 
 s22_23_temp <- s22_23_temp %>%
   rename(Year = year) %>%
@@ -661,4 +687,40 @@ s22_s23_dist %>%
   geom_histogram()
 ```
 
+```{r}
+global_model <- gam(pib ~ pg + pf + ps + hg + hf + hs + dsf,
+ family = betar(link = "logit"),
+ data = s22_23_rx_unique,
+ na.action  = "na.pass")
+
+summary(global_model)
+```
+
+
+```{r}
+s23temp <- s23temp %>%
+  rename(dsf = DSF)
+
+s23_rx_uniq_temp <- s23_rx_uniq %>%
+  left_join(s23temp, by = join_by(dsf), relationship = "many-to-many")
+
+s23_rx_uniq_temp_mod <- s23_rx_uniq_temp %>%
+  mutate_at(vars(air_temp_max_c), .funs = function(x){as.numeric(scale(x, center = T))})
+
+
+gmodel9 <- gam(pib ~  dsf + air_temp_max_c,
+                  family = betar(link = "logit"),
+                  data = s23_rx_uniq_temp_mod,
+                  na.action = "na.pass")
+
+gmodel10 <- gam(pib ~ air_temp_max_c,
+                  family = betar(link = "logit"),
+                  data = s23_rx_uniq_temp_mod,
+                  na.action = "na.pass")
+
+
+
+s22_23_rx_temp_unique
+
+```
 
