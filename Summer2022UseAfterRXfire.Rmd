@@ -121,13 +121,30 @@ s22rx$distance_to_edge <- min_distances
 #This looks right, and similar to what we got in other analysis.
 s22rx %>%
   dplyr::filter(burned == 1) %>%
-  ggplot(aes(date, distance_to_edge)) +
+  ggplot(aes(DSF, distance_to_edge)) +
   geom_point() +
-  geom_smooth() +
-  labs(x = "DSF",
-       y = "Distance to edge (m)",
-       title = "Distance to edge following prescribed fire",
-       subtitle = "Only looking at birds within burned units")
+  labs(x = "Days since fire",
+       y = "Distance to perimeter of burn unit (m)") +
+  theme_bw() +
+  theme(legend.position = "none",
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.line = element_line("black"),
+        axis.ticks = element_line("black"),
+        axis.text.x = element_text(colour = "black", size = 12),
+        axis.title.y = element_text(colour = "black", size = 12),
+        axis.title.x = element_text(colour = "black", size = 12),
+        legend.title = element_text(colour = "black", size = 12),
+        legend.text = element_text(colour = "black", size = 12),
+        axis.text.y = element_text(colour = "black", size = 12),
+        plot.margin = margin(t = 5, r = 10, b = 5, l = 5, unit = "pt"))
+
+dist_model <- lmer(distance_to_edge ~ DSF + (1 | band_numb), 
+                    data = s22rx %>% dplyr::filter(burned == 1))
+summary(dist_model)
+
+
+  
 
 s22rx %>%
   dplyr::filter(burned == 1) %>%
@@ -210,13 +227,22 @@ ave_burned_per_week %>%
 #proportion of birds in burn areas each day.
 s22rx %>%
   ggplot(aes(DSF, pib)) +
-  geom_point() +
-  #geom_smooth(method = "loess") +
-  scale_y_continuous(labels = percent) +
+  geom_point(size = 2) +
   labs(x = "Days since fire",
-       y = "% of sampled bobwhite in burned units",
-       title = "Use of burned areas following prescribed fire in 2022") +
-  theme_bw()
+       y = "Proportion of bobwhite in burned areas") +
+  theme_bw() +
+  theme(legend.position = "none",
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.line = element_line("black"),
+        axis.ticks = element_line("black"),
+        axis.text.x = element_text(colour = "black", size = 12),
+        axis.title.y = element_text(colour = "black", size = 12),
+        axis.title.x = element_text(colour = "black", size = 12),
+        legend.title = element_text(colour = "black", size = 12),
+        legend.text = element_text(colour = "black", size = 12),
+        axis.text.y = element_text(colour = "black", size = 12),
+        plot.margin = margin(t = 5, r = 10, b = 5, l = 5, unit = "pt")) 
 
 ```
 
@@ -228,10 +254,10 @@ s22rx_sc <- s22rx %>%
   mutate_at(vars(pg:hs), .funs = function(x){as.numeric(scale(x, center = T))}) %>%
   mutate(pib = pib + 0.00001)
 
-s22rx_sc1 <- s22rx_sc %>%
+s22rx_sc <- s22rx_sc %>%
   select(pib, DSF, pg:hs)
 
-s22_rx_uniq <- s22rx_sc1[!duplicated(s22rx_sc1), ]
+s22_rx_uniq <- s22rx_sc[!duplicated(s22rx_sc), ]
 ```
 
 Checking for correlations 
@@ -287,7 +313,7 @@ gmodel1 <- gam(pib ~ pg,
                      na.action = "na.pass")
 
 
-gmodel2 <- gam(pib ~ dsf, 
+gmodel2 <- gam(pib ~ DSF, 
                   data = s22_rx_uniq_temp_mod,
                   family = betar(link = "logit"),
                   na.action = "na.pass")
@@ -323,15 +349,17 @@ gmodel8 <- gam(pib ~ 1,
                   data = s22_rx_uniq_temp_mod,
                   na.action = "na.pass")
 
-gmodel9 <- gam(pib ~  dsf + air_temp_max_c,
-                  family = betar(link = "logit"),
-                  data = s22_rx_uniq_temp_mod,
-                  na.action = "na.pass")
+#gmodel9 <- gam(pib ~  DSF + air_temp_max_c,
+                 # family = betar(link = "logit"),
+                  #data = s22_rx_uniq_temp_mod,
+                #  na.action = "na.pass")
 
-gmodel10 <- gam(pib ~ air_temp_max_c,
-                  family = betar(link = "logit"),
-                  data = s22_rx_uniq_temp_mod,
-                  na.action = "na.pass")
+#gmodel10 <- gam(pib ~ air_temp_max_c,
+               #   family = betar(link = "logit"),
+               #   data = s22_rx_uniq_temp_mod,
+              #    na.action = "na.pass")
+
+#summary(gmodel9)
 
 ```
 
@@ -340,11 +368,11 @@ Ranking candidate models (gam)
 
 #### Ranking gam models 2022 ####
 # Creating a data frame to store model names and their AIC values
-model_names <- c(paste0("gmodel", 1:10))
+model_names <- c(paste0("gmodel", 1:8))
 
 
 model_list <- list(gmodel1, gmodel2, gmodel3, gmodel4,
-                   gmodel5, gmodel6, gmodel7, gmodel8, gmodel9,gmodel10)
+                   gmodel5, gmodel6, gmodel7, gmodel8)
 
 
 model_aic <- sapply(model_list, AIC)
@@ -377,9 +405,75 @@ model_comparison_sorted$weight <- round(model_comparison_sorted$weight,3)
 
 model_comparison_sorted %>% view
 
-#write_xlsx(model_comparison_sorted, "/Users/jeffgrayum/Downloads/model_comparison22.xlsx")
+write_xlsx(model_comparison_sorted, "/Users/jeffgrayum/Downloads/model_comp22.xlsx")
 ```
 
+```{r}
+#### Top model (9) predictions
+#Temp first
+temp_values <- seq(min(s22_rx_uniq_temp_mod$air_temp_max_c, na.rm = TRUE), 
+                 max(s22_rx_uniq_temp_mod$air_temp_max_c, na.rm = TRUE), 
+                 length.out = 1000)
+
+temp_df <- data.frame(
+ air_temp_max_c = temp_values,
+ DSF =  rep(mean(s22_rx_uniq_temp_mod$DSF), length(temp_values))
+)
+
+temp_pred <- data.frame(predict(gmodel9, newdata = temp_df, type = "response", se.fit = TRUE))
+
+
+temp_pred$lowCI = (temp_pred$fit - (1.96 * temp_pred$se.fit))
+temp_pred$upperCI = (temp_pred$fit + (1.96 * temp_pred$se.fit))
+
+
+temp_pred %>%
+  ggplot(aes(temp_values, y = fit)) +
+  geom_line() +
+  geom_ribbon(aes(ymin = lowCI, ymax = upperCI), fill = "red", alpha = 0.2) +
+  labs(x = "Max temp celcius (centered and scaled)",
+       y = "% Bobwhite predicted in burned units",
+       title = "Use of burned units after prescribed fire predicted by temperature") +
+  scale_y_continuous(labels = scales::percent) +
+  theme_bw() 
+
+#Now for DSF
+DSF_values <- seq(min(s22_rx_uniq_temp_mod$DSF, na.rm = TRUE), 
+                 max(s22_rx_uniq_temp_mod$DSF, na.rm = TRUE), 
+                 length.out = 1000)
+
+DSF_df <- data.frame(
+ air_temp_max_c = rep(mean(s22_rx_uniq_temp_mod$air_temp_max_c), length(DSF_values)),
+ DSF =  DSF_values
+)
+
+DSF_pred <- data.frame(predict(gmodel9, newdata = DSF_df, type = "response", se.fit = TRUE))
+
+
+DSF_pred$lowCI = (DSF_pred$fit - (1.96 * DSF_pred$se.fit))
+DSF_pred$upperCI = (DSF_pred$fit + (1.96 * DSF_pred$se.fit))
+
+
+DSF_pred %>%
+  ggplot(aes(DSF_values, y = fit)) +
+  geom_line() +
+  geom_ribbon(aes(ymin = lowCI, ymax = upperCI), fill = "red", alpha = 0.2) +
+  labs(x = "Days since fire",
+       y = "Proportion of bobwhite predicted in burned areas") +
+  theme_bw() +
+  theme(legend.position = "none",
+        panel.grid.major=element_blank(),
+        panel.grid.minor=element_blank(),
+        axis.line=element_line("black"),
+        axis.ticks=element_line("black"),
+        axis.text.x = element_text(colour="black",size=12),
+        axis.title.y=element_text(colour="black",size=12),
+        axis.title.x=element_text(colour="black",size=12),
+        legend.title = element_text(colour="black",size=12),
+        legend.text = element_text(colour="black",size=12),
+        axis.text.y = element_text(colour="black",size=12))
+
+```
 
 ```{r}
 #### Plotting veg data vs percent in burned ####
