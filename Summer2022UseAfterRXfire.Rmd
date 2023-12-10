@@ -257,7 +257,12 @@ s22rx_sc <- s22rx %>%
 s22rx_sc <- s22rx_sc %>%
   select(pib, DSF, pg:hs)
 
-s22_rx_uniq <- s22rx_sc[!duplicated(s22rx_sc), ]
+s22rx_uniq <- s22rx_sc %>% 
+  group_by(DSF) %>%
+  slice_head(n = 1) %>%
+  ungroup()
+
+View(s22rx_uniq)
 ```
 
 Checking for correlations 
@@ -290,7 +295,7 @@ start_date22 <- ymd("2022-04-11")
 temp22$DSF <- as.numeric(temp22$date - start_date22)
 
 
-s22_rx_uniq_temp <- s22_rx_uniq %>%
+s22_rx_uniq_temp <- s22rx_uniq %>%
   left_join(temp22, by = "DSF") %>%
   select(pib:date, air_temp_max_c)
 
@@ -302,6 +307,12 @@ s22_rx_uniq_temp_mod <- s22_rx_uniq_temp %>%
   mutate_at(vars(air_temp_max_c), .funs = function(x){as.numeric(scale(x, center = T))})
 
 ```
+
+```{r}
+hmm <- s22_rx_unique %>%
+  filter(DSF %in% 3:33) 
+```
+
 
 Univarariate candidate models (GAM)
 ```{r}
@@ -437,17 +448,22 @@ temp_pred %>%
   scale_y_continuous(labels = scales::percent) +
   theme_bw() 
 
-#Now for DSF
+##### Now for DSF predict ####
 DSF_values <- seq(min(s22_rx_uniq_temp_mod$DSF, na.rm = TRUE), 
                  max(s22_rx_uniq_temp_mod$DSF, na.rm = TRUE), 
                  length.out = 1000)
 
 DSF_df <- data.frame(
- air_temp_max_c = rep(mean(s22_rx_uniq_temp_mod$air_temp_max_c), length(DSF_values)),
- DSF =  DSF_values
+  hs = rep(mean(s22_rx_uniq_temp_mod$hs), length(DSF_values)),
+  hg = rep(mean(s22_rx_uniq_temp_mod$hg), length(DSF_values)),
+  hf = rep(mean(s22_rx_uniq_temp_mod$hf), length(DSF_values)),
+  pg = rep(mean(s22_rx_uniq_temp_mod$pg), length(DSF_values)),
+  pf = rep(mean(s22_rx_uniq_temp_mod$pf), length(DSF_values)),
+  ps = rep(mean(s22_rx_uniq_temp_mod$ps), length(DSF_values)),
+  DSF =  DSF_values
 )
 
-DSF_pred <- data.frame(predict(gmodel9, newdata = DSF_df, type = "response", se.fit = TRUE))
+DSF_pred <- data.frame(predict(gmodel2, newdata = DSF_df, type = "response", se.fit = TRUE))
 
 
 DSF_pred$lowCI = (DSF_pred$fit - (1.96 * DSF_pred$se.fit))
@@ -461,18 +477,18 @@ DSF_pred %>%
   labs(x = "Days since fire",
        y = "Proportion of bobwhite predicted in burned areas") +
   theme_bw() +
-  theme(legend.position = "none",
-        panel.grid.major=element_blank(),
-        panel.grid.minor=element_blank(),
-        axis.line=element_line("black"),
-        axis.ticks=element_line("black"),
-        axis.text.x = element_text(colour="black",size=12),
-        axis.title.y=element_text(colour="black",size=12),
-        axis.title.x=element_text(colour="black",size=12),
-        legend.title = element_text(colour="black",size=12),
-        legend.text = element_text(colour="black",size=12),
-        axis.text.y = element_text(colour="black",size=12))
-
+ theme(legend.position = "none",
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.line = element_line("black"),
+        axis.ticks = element_line("black"),
+        axis.text.x = element_text(colour = "black", size = 12),
+        axis.title.y = element_text(colour = "black", size = 12),
+        axis.title.x = element_text(colour = "black", size = 12),
+        legend.title = element_text(colour = "black", size = 12),
+        legend.text = element_text(colour = "black", size = 12),
+        axis.text.y = element_text(colour = "black", size = 12),
+        plot.margin = margin(t = 5, r = 10, b = 5, l = 5, unit = "pt"))
 ```
 
 ```{r}
