@@ -143,9 +143,6 @@ dist_model <- lmer(distance_to_edge ~ DSF + (1 | band_numb),
                     data = s22rx %>% dplyr::filter(burned == 1))
 summary(dist_model)
 
-
-  
-
 s22rx %>%
   dplyr::filter(burned == 1) %>%
   summarize(mean_distance = mean(distance_to_edge))
@@ -225,7 +222,7 @@ ave_burned_per_week %>%
        title = "Average percentage of birds online that were located in burned areas each week")
 
 #proportion of birds in burn areas each day.
-s22rx %>%
+s22_rx_uniq_temp_mod %>%
   ggplot(aes(DSF, pib)) +
   geom_point(size = 2) +
   labs(x = "Days since fire",
@@ -246,9 +243,9 @@ s22rx %>%
 
 ```
 
-Centering and scaling vegetation covariates
+Centering and scaling vegetation covariates, removing duplicate rows.
 ```{r}
-#### Centering and scaling veg covariates.
+#### Centering and scaling veg covariates. Removing duplicate rows ####
 
 s22rx_sc <- s22rx %>% 
   mutate_at(vars(pg:hs), .funs = function(x){as.numeric(scale(x, center = T))}) %>%
@@ -308,10 +305,6 @@ s22_rx_uniq_temp_mod <- s22_rx_uniq_temp %>%
 
 ```
 
-```{r}
-hmm <- s22_rx_unique %>%
-  filter(DSF %in% 3:33) 
-```
 
 
 Univarariate candidate models (GAM)
@@ -360,15 +353,15 @@ gmodel8 <- gam(pib ~ 1,
                   data = s22_rx_uniq_temp_mod,
                   na.action = "na.pass")
 
-#gmodel9 <- gam(pib ~  DSF + air_temp_max_c,
-                 # family = betar(link = "logit"),
-                  #data = s22_rx_uniq_temp_mod,
-                #  na.action = "na.pass")
+gmodel9 <- gam(pib ~  DSF + air_temp_max_c,
+                  family = betar(link = "logit"),
+                  data = s22_rx_uniq_temp_mod,
+                 na.action = "na.pass")
 
-#gmodel10 <- gam(pib ~ air_temp_max_c,
-               #   family = betar(link = "logit"),
-               #   data = s22_rx_uniq_temp_mod,
-              #    na.action = "na.pass")
+gmodel10 <- gam(pib ~ air_temp_max_c,
+                  family = betar(link = "logit"),
+                  data = s22_rx_uniq_temp_mod,
+                  na.action = "na.pass")
 
 #summary(gmodel9)
 
@@ -379,11 +372,11 @@ Ranking candidate models (gam)
 
 #### Ranking gam models 2022 ####
 # Creating a data frame to store model names and their AIC values
-model_names <- c(paste0("gmodel", 1:8))
+model_names <- c(paste0("gmodel", 1:10))
 
 
 model_list <- list(gmodel1, gmodel2, gmodel3, gmodel4,
-                   gmodel5, gmodel6, gmodel7, gmodel8)
+                   gmodel5, gmodel6, gmodel7, gmodel8, gmodel9, gmodel10)
 
 
 model_aic <- sapply(model_list, AIC)
@@ -416,7 +409,7 @@ model_comparison_sorted$weight <- round(model_comparison_sorted$weight,3)
 
 model_comparison_sorted %>% view
 
-write_xlsx(model_comparison_sorted, "/Users/jeffgrayum/Downloads/model_comp22.xlsx")
+#write_xlsx(model_comparison_sorted, "/Users/jeffgrayum/Downloads/model_comp22FIXED.xlsx")
 ```
 
 ```{r}
