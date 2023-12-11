@@ -1,0 +1,306 @@
+---
+title: "Summer2023UseAfterFire"
+output: html_document
+date: "2023-09-26"
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+#### Libraries ####
+
+library(janitor)
+library(tidyverse)
+library(ggthemes)
+library(lubridate)
+library(lme4)
+library(readxl)
+library(writexl)
+library(sf)
+library(MuMIn)
+library(scales)
+library(sjPlot)
+library(rsq)
+library(betareg)
+library(broom)
+library(caret)
+library(janitor)
+library(performance)
+library(gam)
+library(mgcv)
+theme_set(theme_minimal())
+```
+
+Importing data sets
+```{r}
+#### Importing veg data  and locations ####
+
+#Veg data
+veg_data_2023 <- read_xlsx("/Volumes/Samsung_T5/BOBWHITE_DATA/Clean/VegSurveys/VegSurveys2023.xlsx") %>%
+  clean_names() %>%
+  mutate(date = as.Date(date)) 
+
+#Lets seperated out veg data to isolate veg plots burned 17 April
+veg_data_2023_units1_5 <- veg_data_2023 %>%
+  dplyr::filter(unit %in% 1:5)
+
+veg_data_2023_unit6 <- veg_data_2023 %>%
+  dplyr::filter(unit %in% 6)
+
+
+#Importing all summer locations. This includes burn status, which we got from ArcGIS
+s23_locs <- read_xlsx("/Volumes/Samsung_T5/BOBWHITE_DATA/Clean/SummerLocations/Summer2023/2023_burn_locs_burned_unburned_CORRECTED.xlsx") %>%
+  clean_names() %>%
+  mutate(date = ymd(date)) %>%
+  dplyr::filter(status != "D") %>%
+  mutate(burned = as.double(burned))
+
+#Importing a spreadsheet of all locations from burn unit burned in 17 April (these rows still in s23_locs... this is a subset).
+#These points are already properly identified as burned/unburned based on burn date. We will need to delete this subset from s23_locs. And add veg data and dsf to each data set before joining.
+s23_april17subset <- read_xlsx("/Volumes/Samsung_T5/BOBWHITE_DATA/Clean/SummerLocations/Summer2023/s23LocsIn17AprilBurnUnit.xlsx") %>%
+  clean_names() %>%
+  mutate(date = as.Date(date)) %>%
+  dplyr::filter(date > "2023-04-17",
+                status != "D") 
+
+
+#Here, we delete the subset from s23 locs. We will update s23 locs with veg data and dsf. Update the subset with same info, and then join them.
+#Now, we must replace rows in s23_locs with identical rows in the subset (based on band_numb, date, northing, and easting)
+s23_locs_main <- rows_delete(s23_locs, s23_april17subset, by = c("band_numb", "date", "northing", "easting"))
+
+
+#Adding DSF to main dataset. Most locations burned March 21 2023. We'll add the subset of other locations next.
+burn_date_2023_most <- ymd("2023-03-21")
+
+s23_locs_main$dsf <- as.numeric(s23_locs_main$date - burn_date_2023_most)
+
+
+#Now we add DSF to subset.
+burn_date_subset <- ymd("2023-04-17")
+
+
+s23_april17subset$dsf <- as.numeric(s23_april17subset$date - burn_date_subset)
+
+```
+
+Summarizing veg data and adding to to s23_locs_main
+```{r}
+#### Adding veg data to s23 locs ####]
+
+#Summarizing veg data.
+veg_data_2023_units1_5_summary <- veg_data_2023_units1_5 %>%
+  group_by(date) %>%
+  summarize(hg = mean(max_grasses_cm),
+            hf = mean(max_forbs_cm),
+            hs = mean(max_shrubs_cm),
+            pg = mean(percent_grasses),
+            pf = mean(percent_forbs),
+            ps = mean(percent_shrubs))
+
+#adding week column 
+veg_data_2023_units1_5_summary$week <- week(veg_data_2023_units1_5_summary$date)
+
+#We'll need to update this manually. Some done on sat, some on sun.
+#writexl::write_xlsx(veg_data_2023_units1_5_summary, "/Users/jeffgrayum/Downloads/vegsummary_23_1_5.xlsx")
+
+#Reading back in after correcting.
+veg_data_2023_units1_5_summary <- read_xlsx("/Volumes/Samsung_T5/BOBWHITE_DATA/Clean/VegSurveys/vegsummary_23_1_5.xlsx")
+
+#Now we will add week column to summer locs (main)
+s23_locs_main$week <- week(s23_locs_main$date)
+
+#Now, we join based on week.
+s23_locs_main_veg <- inner_join(s23_locs_main, veg_data_2023_units1_5_summary, by = "week")
+
+#taking a look
+s23_locs_main_veg%>%
+  view()
+
+#renaming some columns
+s23_locs_main_veg <- s23_locs_main_veg %>%
+  rename(date = date.x,
+         start_date_of_week = date.y) %>%
+  select(-column1)
+
+```
+
+Summarizing veg data and adding to to s23_locs_subset
+```{r}
+#### Adding veg data to s23 locs ####]
+
+#Summarizing veg data.
+veg_data_2023_unit6_summary <- veg_data_2023_unit6 %>%
+  group_by(date) %>%
+  summarize(hg = mean(max_grasses_cm),
+            hf = mean(max_forbs_cm),
+            hs = mean(max_shrubs_cm),
+            pg = mean(percent_grasses),
+            pf = mean(percent_forbs),
+            ps = mean(percent_shrubs))
+
+#adding week column 
+veg_data_2023_unit6_summary$week <- week(veg_data_2023_unit6_summary$date)
+
+#We'll need to update this manually. Some done on sat, some on sun.
+#writexl::write_xlsx(veg_data_2023_unit6_summary, "/Users/jeffgrayum/Downloads/vegsummary_23_6.xlsx")
+
+#Reading back in after correcting.
+veg_data_2023_unit6_summary <- read_xlsx("/Volumes/Samsung_T5/BOBWHITE_DATA/Clean/VegSurveys/vegsummary_23_6.xlsx")
+
+#Now we will add week column to summer locs (main)
+s23_april17subset$week <- week(s23_april17subset$date)
+
+#writexl::write_xlsx(s23_april17subset, "/Users/jeffgrayum/Downloads/s23_april17subset.xlsx")
+
+#Now, we join based on week.
+s23_april17subset_veg <- inner_join(s23_april17subset, veg_data_2023_unit6_summary, by = "week")
+
+#writexl::write_xlsx(s23_april17subset_veg, "/Users/jeffgrayum/Downloads/s23_april17subset_veg.xlsx")
+
+#Required some cleaning, reading it back in:
+s23_april17subset_veg_fixed <- read_xlsx("/Volumes/Samsung_T5/BOBWHITE_DATA/Clean/SummerLocations/Summer2023/s23_april17subset_veg_fixed.xlsx")
+
+#taking a look
+s23_april17subset_veg_fixed %>%
+  view()
+
+#renaming some columns
+s23_april17subset_veg_fixed <- s23_april17subset_veg_fixed %>%
+  rename(start_date_of_week = date.y)
+
+```
+
+Now, we can bind main data set and subset!
+```{r}
+s23_locs_veg_all_fixed <- rbind(s23_april17subset_veg_fixed, s23_locs_main_veg)
+
+s23_locs_veg_all_fixed <- s23_locs_veg_all_fixed %>%
+  arrange(date)
+
+s23_locs_veg_all_fixed <- s23_locs_veg_all_fixed %>%
+  dplyr::filter(date < "2023-08-05")
+```
+
+
+Adding a distance to edge column to locations
+```{r}
+#### Adding dte ####
+
+#Importing map of burned areas, summer 2023.
+#Reading burn compartments in again, but as an sf object
+burn_compartments_2023 <- st_read("/Volumes/Samsung_T5/BOBWHITE_DATA/Maps/2023_burn_compartments/burn 2023 map/NoAG_NoHW/2023_burn_units_NoAg_NoHW.shp")
+
+# Converting burn_compartments_2022 polygons to line geometries that represent their boundaries. This is necessary to calc min distances later.
+burn_compartment_boundaries <- st_boundary(burn_compartments_2023)
+
+# Converting tibble of points to an sf object
+s23_locs_sf <- st_as_sf(s23_locs_veg_all_fixed, coords = c("easting", "northing"), crs = st_crs(burn_compartments_2023))
+
+# Calculating the distance from each point to the nearest line boundary of the burn compartments, storing it in matrix
+distance_matrix <- st_distance(s23_locs_sf, burn_compartment_boundaries)
+
+# Applying the function min() to each row (1 does this -- we'd use 2 for columns) in the distance matrix
+min_distances <- apply(distance_matrix, 1, min)
+
+# Add the minimum distance to the original tibble as a new column
+s23_locs_veg_all_fixed$distance_to_edge <- min_distances
+
+write_xlsx(s23_locs_veg_all_fixed, "/Volumes/Samsung_T5/BOBWHITE_DATA/Clean/SummerLocations/Summer2023/s23_locs_veg_all_fixed.xlsx")
+```
+
+
+
+We're gonna try joining in R...
+```{r}
+km23 <- read_xlsx("/Users/jeffgrayum/Downloads/km23df.xlsx") %>%
+  mutate(date = ymd(date)) %>%
+  dplyr::filter(date >= "2023-03-22")
+
+s23_locs_veg_birds_online <- s23_locs_veg %>%
+  clean_names() %>%
+  left_join(km23 %>% dplyr::select(n.risk, date), 
+            by = "date")
+
+write_xlsx(s23_locs_veg_birds_online, "/Users/jeffgrayum/Downloads/s23_locs_veg_birds_online.xlsx")
+```
+
+
+Making some distance to edge plots (Still, not the expected trend)
+```{r}
+#### Plotting DTE ####
+s23_locs_veg_all_fixed %>%
+  dplyr::filter(burned == 1) %>%
+  ggplot(aes(dsf, distance_to_edge)) +
+  geom_point() +
+  geom_smooth() +
+  labs(x = "DSF",
+       y = "Distance to edge (m)",
+       title = "Distance to edge following prescribed fire (2023)",
+       subtitle = "Only looking at birds within burned units")
+
+s23_locs_veg %>%
+  dplyr::filter(burned == 1) %>%
+  summarize(mean_dte = mean(distance_to_edge)) %>%
+  print()
+
+s23_locs_veg %>%
+  dplyr::filter(burned == 0) %>%
+  ggplot(aes(dsf, distance_to_edge)) +
+  geom_point() +
+  geom_smooth() +
+  labs(x = "DSF",
+       y = "Distance to edge (m)",
+       title = "Distance to edge following prescribed fire (2023)",
+       subtitle = "Only looking at birds within unburned units")
+
+s23_locs_veg %>%
+  dplyr::filter(burned == 0) %>%
+  summarize(mean_dte = mean(distance_to_edge)) %>%
+  print()
+```
+
+Now, we will determine the proportion of birds in burned areas each day.
+```{r}
+s23_locs_veg_birds_online_fixed_veg <- read_xlsx("/Volumes/Samsung_T5/BOBWHITE_DATA/Clean/SummerLocations/Summer2023/s23_locs_veg_birds_online_fixedVEG.xlsx") %>%
+  mutate(date = as.Date())
+
+# Counting unique birds signaled within a burned area each day
+birds_in_burned_areas_each_day23 <- s23_locs_veg_birds_online_fixed_veg %>%
+  dplyr::filter(burned == 1) %>%
+  group_by(date) %>%
+  summarize(birds_in_burned_area_each_day23 = n_distinct(band_numb))
+
+# Joining into summer locs data
+s23_locs_veg_birds_online_fixed_veg <- s23_locs_veg_birds_online_fixed_veg %>%
+  left_join(birds_in_burned_areas_each_day23, by = "date")
+
+# Handling NA values for birds_in_burned_area_each_day23
+s23_locs_veg_birds_online_fixed_veg$birds_in_burned_area_each_day23[is.na(s23_locs_veg_birds_online_fixed_veg$birds_in_burned_area_each_day23)] <- 0
+
+s23_locs_veg_birds_online_fixed_veg <- s23_locs_veg_birds_online_fixed_veg %>%
+  rename(birds_in_burned_daily = birds_in_burned_area_each_day23)
+
+# Calculate percentage of birds in burned areas
+s23_locs_veg_birds_online_fixed_veg <- s23_locs_veg_birds_online_fixed_veg %>%
+  mutate(percent_in_burned = (birds_in_burned_daily / birds_online))
+
+# Handling NA values for percent_in_burned
+s23_locs_veg_birds_online_fixed_veg$percent_in_burned[is.na(s23_locs_veg_birds_online_fixed_veg$percent_in_burned)] <- 0
+
+#shortening name of df
+s23rx_FV <- s23_locs_veg_birds_online_fixed_veg
+
+writexl::write_xlsx(s23rx_FV, "/Users/jeffgrayum/Downloads/s23rx_FV.xlsx")
+```
+
+Plotting use over dsf
+```{r}
+s23rx_FV %>%
+  ggplot(aes(dsf, percent_in_burned)) +
+  geom_point()
+```
+
