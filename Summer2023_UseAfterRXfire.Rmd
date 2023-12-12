@@ -40,50 +40,18 @@ theme_set(theme_minimal())
 Importing data. Veg metrics and percent burned already added in 2023 Burned Unburned Locs Veg .rmd
 ```{r}
 #### Importing data ####
-s23rx <- read_xlsx("/Volumes/Samsung_T5/BOBWHITE_DATA/Clean/SummerLocations/Summer2023/s23rx.xlsx") %>%
-  rename(pg = perc_grasses,
-         pf = perc_forbs,
-         ps = perc_shrubs,
-         hg = height_grasses,
-         hf = height_forbs,
-         hs = height_shrubs,
-         pib = percent_in_burned)
-
-head(s23rx)
+s23rx <- read_xlsx("/Volumes/Samsung_T5/BOBWHITE_DATA/Clean/SummerLocations/Summer2023/s23rx_no6.xlsx") 
 ```
 
-
-
-Plotting use over time
-```{r}
-#### Plotting use over time ####
-
-# If date is not in Date format
-# s23rx$date <- as.Date(s23rx$date)
-
-s23rx %>%
-  dplyr::filter(date <= as.Date("2023-08-04"),
-                dsf <= 120) %>%
-  ggplot(aes(dsf, pib)) +
-  geom_point() +
-  labs(title = "Use of burned areas following prescribed fire in 2023",
-       x = "Days since fire",
-       y = "% of sampled bobwhite in burned ") +
-  theme_bw() +
-  scale_y_continuous(labels = scales::percent_format(scale = 100)) +
-  scale_x_continuous(breaks = c(0, 30, 60, 90, 120, 150))  
-
-
-```
 
 Centering and scaling veg covariates
 ```{r}
 s23rx_sc <- s23rx %>% 
-  mutate_at(vars(pg:hs), .funs = function(x){as.numeric(scale(x, center = T))}) %>%
+  mutate_at(vars(hg:ps), .funs = function(x){as.numeric(scale(x, center = T))}) %>%
   mutate(pib = pib + 0.00001)
 
 s23rx_sc1 <- s23rx_sc %>%
-  select(pib, dsf, pg:hs)
+  select(pib, dsf, hg:ps)
 
 s23_rx_uniq <- s23rx_sc1[!duplicated(s23rx_sc1), ]
 ```
@@ -114,6 +82,35 @@ s23_rx_uniq_temp_mod <- s23_rx_uniq_temp %>%
   mutate_at(vars(air_temp_max_c), .funs = function(x){as.numeric(scale(x, center = T))})
 ```
 
+Plotting use over time
+```{r}
+#### Plotting use over time ####
+
+# If date is not in Date format
+# s23rx$date <- as.Date(s23rx$date)
+
+s23_rx_uniq %>%
+  ggplot(aes(dsf, pib)) +
+  geom_point(size = 2) +
+  labs(x = "Days since fire",
+       y = "Proportion of bobwhite in burned areas") +
+  theme_bw() +
+  scale_x_continuous(breaks = c(0, 30, 60, 90, 120, 150), limits = c(NA, 150)) +
+  theme_bw() +
+  theme(legend.position = "none",
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.line = element_line("black"),
+        axis.ticks = element_line("black"),
+        axis.text.x = element_text(colour = "black", size = 12),
+        axis.title.y = element_text(colour = "black", size = 12),
+        axis.title.x = element_text(colour = "black", size = 12),
+        legend.title = element_text(colour = "black", size = 12),
+        legend.text = element_text(colour = "black", size = 12),
+        axis.text.y = element_text(colour = "black", size = 12),
+        plot.margin = margin(t = 5, r = 10, b = 5, l = 5, unit = "pt"))
+
+```
 
 2023: Univariate candidate models (GAM)
 ```{r}
@@ -121,58 +118,58 @@ s23_rx_uniq_temp_mod <- s23_rx_uniq_temp %>%
 #### Candidate models (GAM) 2023 #### 
 
 gmodel1 <- gam(pib ~ dsf,
-                     data = s23_rx_uniq_temp_mod,
+                     data = s23_rx_uniq,
                      family=betar(link = "logit"),
                      na.action = "na.pass")
 
 
 gmodel2 <- gam(pib ~ pg, 
-                  data = s23_rx_uniq_temp_mod,
+                  data = s23_rx_uniq,
                   family = betar(link = "logit"),
                   na.action = "na.pass")
 
 gmodel3 <- gam(pib ~ pf, 
-                  data = s23_rx_uniq_temp_mod,
+                  data = s23_rx_uniq,
                   family = betar(link = "logit"),
                   na.action = "na.pass")
 
 gmodel4 <- gam(pib ~ ps,
-                  data = s23_rx_uniq_temp_mod,
+                  data = s23_rx_uniq,
                   family = betar(link = "logit"),
                   na.action = "na.pass")
 
 gmodel5 <- gam(pib ~ hg,
                   family = betar(link = "logit"),
-                  data = s23_rx_uniq_temp_mod,
+                  data = s23_rx_uniq,
                   na.action = "na.pass")
 
 
 gmodel6 <- gam(pib ~ hf,
                   family = betar(link = "logit"),
-                  data = s23_rx_uniq_temp_mod,
+                  data = s23_rx_uniq,
                   na.action = "na.pass")
 
 gmodel7 <- gam(pib ~ hs,
                    family = betar(link = "logit"),
-                  data = s23_rx_uniq_temp_mod,
+                  data = s23_rx_uniq,
                   na.action = "na.pass")
 
 gmodel8 <- gam(pib ~ 1,
                   family = betar(link = "logit"),
-                  data = s23_rx_uniq_temp_mod,
+                  data = s23_rx_uniq,
                   na.action = "na.pass")
 
-gmodel9 <- gam(pib ~  dsf + air_temp_max_c,
-                  family = betar(link = "logit"),
-                  data = s23_rx_uniq_temp_mod,
-                  na.action = "na.pass")
+#gmodel9 <- gam(pib ~  dsf + air_temp_max_c,
+ #                 family = betar(link = "logit"),
+  #                data = s23_rx_uniq_temp_mod,
+   #               na.action = "na.pass")
 
 
 
-gmodel10 <- gam(pib ~ air_temp_max_c,
-                  family = betar(link = "logit"),
-                  data = s23_rx_uniq_temp_mod,
-                  na.action = "na.pass")
+#gmodel10 <- gam(pib ~ air_temp_max_c,
+            #      family = betar(link = "logit"),
+             #     data = s23_rx_uniq_temp_mod,
+              #    na.action = "na.pass")
 ```
 
 Ranking candidate models (GAM)
@@ -180,11 +177,11 @@ Ranking candidate models (GAM)
 
 #### Ranking gam models 2023 ####
 # Creating a data frame to store model names and their AIC values
-model_names <- c(paste0("gmodel", 1:10))
+model_names <- c(paste0("gmodel", 1:8))
 
 
 model_list <- list(gmodel1, gmodel2, gmodel3, gmodel4,
-                   gmodel5, gmodel6, gmodel7, gmodel8, gmodel9, gmodel10)
+                   gmodel5, gmodel6, gmodel7, gmodel8)
 
 
 model_aic <- sapply(model_list, AIC)
@@ -217,7 +214,52 @@ model_comparison_sorted$weight <- round(model_comparison_sorted$weight,3)
 
 model_comparison_sorted %>% view
 
-#write_xlsx(model_comparison_sorted, "/Users/jeffgrayum/Downloads/model_comparison23.xlsx")
+write_xlsx(model_comparison_sorted, "/Users/jeffgrayum/Downloads/model_comp23_No6.xlsx")
+```
+
+```{r}
+#### Making predict plot ####
+
+dsf_values <- seq(min(s23_rx_uniq$dsf, na.rm = TRUE), 
+                 max(s23_rx_uniq$dsf, na.rm = TRUE), 
+                 length.out = 1000)
+
+dsf_df <- data.frame(
+  hs = rep(mean(s23_rx_uniq$hs), length(dsf_values)),
+  hg = rep(mean(s23_rx_uniq$hg), length(dsf_values)),
+  hf = rep(mean(s23_rx_uniq$hf), length(dsf_values)),
+  pg = rep(mean(s23_rx_uniq$pg), length(dsf_values)),
+  pf = rep(mean(s23_rx_uniq$pf), length(dsf_values)),
+  ps = rep(mean(s23_rx_uniq$ps), length(dsf_values)),
+  dsf = dsf_values
+)
+
+dsf_pred <- data.frame(predict(gmodel1, newdata = dsf_df, type = "response", se.fit = TRUE))
+
+
+dsf_pred$lowCI = (dsf_pred$fit - (1.96 * dsf_pred$se.fit))
+dsf_pred$upperCI = (dsf_pred$fit + (1.96 * dsf_pred$se.fit))
+
+
+dsf_pred %>%
+  ggplot(aes(dsf_values, y = fit)) +
+  geom_line() +
+  geom_ribbon(aes(ymin = lowCI, ymax = upperCI), fill = "red", alpha = 0.2) +
+  labs(x = "Days since fire",
+       y = "Proportion of bobwhite predicted in burned areas") +
+  theme_bw() +
+  theme(legend.position = "none",
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.line = element_line("black"),
+        axis.ticks = element_line("black"),
+        axis.text.x = element_text(colour = "black", size = 12),
+        axis.title.y = element_text(colour = "black", size = 12),
+        axis.title.x = element_text(colour = "black", size = 12),
+        legend.title = element_text(colour = "black", size = 12),
+        legend.text = element_text(colour = "black", size = 12),
+        axis.text.y = element_text(colour = "black", size = 12),
+        plot.margin = margin(t = 5, r = 10, b = 5, l = 5, unit = "pt"))
 ```
 
 Let's try combining 2023/23 data
@@ -282,17 +324,17 @@ gmodel8 <- gam(pib ~ 1,
                   data = s22_23_temp_mod,
                   na.action = "na.pass")
 
-gmodel9 <- gam(pib ~  dsf + air_temp_max_c,
-                  family = betar(link = "logit"),
-                  data = s22_23_temp_mod,
-                  na.action = "na.pass")
+#gmodel9 <- gam(pib ~  dsf + air_temp_max_c,
+                #  family = betar(link = "logit"),
+               #   data = s22_23_temp_mod,
+               #   na.action = "na.pass")
 
 
 
-gmodel10 <- gam(pib ~ air_temp_max_c,
-                  family = betar(link = "logit"),
-                  data = s22_23_temp_mod,
-                  na.action = "na.pass")
+#gmodel10 <- gam(pib ~ air_temp_max_c,
+                 # family = betar(link = "logit"),
+                #  data = s22_23_temp_mod,
+                #  na.action = "na.pass")
 
 ```
 
@@ -301,11 +343,11 @@ Ranking candidate models (gam)
 
 #### Ranking gam models 2022/23 ####
 # Creating a data frame to store model names and their AIC values
-model_names <- c(paste0("gmodel", 1:11))
+model_names <- c(paste0("gmodel", 1:8))
 
 
 model_list <- list(gmodel1, gmodel2, gmodel3, gmodel4,
-                   gmodel5, gmodel6, gmodel7, gmodel8, gmodel9, gmodel10, gmodel11)
+                   gmodel5, gmodel6, gmodel7, gmodel8)
 
 
 model_aic <- sapply(model_list, AIC)
@@ -338,43 +380,10 @@ model_comparison_sorted$weight <- round(model_comparison_sorted$weight,3)
 
 model_comparison_sorted %>% view
 
-#write_xlsx(model_comparison_sorted, "/Users/jeffgrayum/Downloads/model_comparison22_23fixed.xlsx")
+write_xlsx(model_comparison_sorted, "/Users/jeffgrayum/Downloads/model_comparison22_23fixed.xlsx")
 ```
 
-Making predict plot with model 6 (top model)
-```{r}
-hf_values <- seq(min(s22_23_rx_unique$hf, na.rm = TRUE), 
-                 max(s22_23_rx_unique$hf, na.rm = TRUE), 
-                 length.out = 1000)
 
-hf_df <- data.frame(
-  hf = hf_values
-)
-
-hf_pred <- data.frame(predict(gmodel6, newdata = hf_df, type = "response", se.fit = TRUE))
-
-
-hf_pred$lowCI = (hf_pred$fit - (1.96 * hf_pred$se.fit))
-hf_pred$upperCI = (hf_pred$fit + (1.96 * hf_pred$se.fit))
-
-#Before plotting, let's un-center and scale the x-axis, so it is easy to interpret.
-#First, we must determine mean and SD
-hf_mean <- mean(s22_23_rx_unique$hf, na.rm = TRUE)
-hf_sd <- sd(s22_23_rx_unique$hf, na.rm = TRUE)
-
-
-
-
-hf_pred %>%
-  ggplot(aes(hf_values, y = fit)) +
-  geom_line() +
-  geom_ribbon(aes(ymin = lowCI, ymax = upperCI), fill = "red", alpha = 0.1) +
-  labs(x = "Height of forbs (centered and scaled)",
-       y = "% Bobwhite predicted in burned units",
-       title = "Use of burned units after prescribed fire predicted by forb height") +
-  scale_y_continuous(labels = scales::percent) +
-  theme_bw() 
-```
 
 
 Let's try seeing if we can predict prob of burned/unburned by using distance to edge.
@@ -544,84 +553,6 @@ s23rx %>%
 ```
 
 
-Playing with PCA
-```{r}
-#### PCA ####
-veg.pca <- prcomp(s23rx_sc %>% select(pg:hs))
-
-summary(veg.pca)
-
-fviz_eig(veg.pca)
-
-#fviz_pca_ind(veg.pca,
-            # col.ind = "cos2", # Color by the quality of representation
-            # gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
-             #repel = TRUE)     # Avoid text overlapping
-             
-
-fviz_pca_var(veg.pca,
-             col.var = "contrib", # Color by contributions to the PC
-             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
-           repel = TRUE)
-
-fviz_pca_biplot(veg.pca, repel = TRUE,
-               col.var = "#2E9FDF", # Variables color
-               col.ind = "#696969"  # Individuals color
-               )
-
-
-# Eigenvalues
-eig.val <- get_eigenvalue(veg.pca)
-eig.val
-  
-# Results for Variables
-res.var <- get_pca_var(veg.pca)
-res.var$coord          # Coordinates
-res.var$contrib        # Contributions to the PCs
-res.var$cos2           # Quality of representation 
-# Results for individuals
-res.ind <- get_pca_ind(veg.pca)
-res.ind$coord          # Coordinates
-res.ind$contrib        # Contributions to the PCs
-res.ind$cos2           # Quality of representation 
-```
-
-Partial least squares
-```{r}
-#### PLSR ####
-
-set.seed(123)
-plsr_model <- plsr(pib ~ pg + pf + ps + hg + hf + hs +dsf,
-                   data = s23rx_sc,
-                   scale = FALSE,
-                   na.action = "na.pass",
-                   validation = "CV")
-                   
-
-#97.11 % of the varation of our model can be explained by using only one covariate...
-summary(plsr_model)
-
-validationplot(plsr_model, val.type="RMSEP")
-validationplot(plsr_model, val.type="R2")
-```
-
-
-
-s22_23_temp <- s22_23_temp %>%
-  rename(Year = year) %>%
-  mutate(Year = as.factor(Year))
-
-s22_23_temp %>% 
-  dplyr::filter(dsf > 1,
-                dsf <= 120) %>%
-  ggplot(aes(dsf, (air_temp_max_c * 1.8 + 32), color = Year)) +
-  geom_smooth(method = "loess", se = F) +
-  labs(x = "Days since fire",
-       y = "Maximum daily temperature (F)",
-       title = "Maximum daily temperatures trends following prescribed fire") +
-    scale_x_continuous(breaks = c(0, 30, 60, 90, 120, 150))  +
-  theme_bw()
-```
 
 ```{r}
 
@@ -632,12 +563,10 @@ color_map <- setNames(c("red", "black", "blue"), c(degree_label, "% Bobwhite in 
 
 # Assuming s22rx exists and has the relevant columns
 # Create dashed line data
-dashed_line_data <- data.frame(dsf = c(min(s22rx$dsf), max(s22rx$dsf)),
+dashed_line_data <- data.frame(dsf = c(min(s23rx$dsf), max(s23rx$dsf)),
                                y = c(86.5 / 2, 86.5 / 2))
 
-s23rx %>%
-  dplyr::filter(date <= "2023-08-04",
-                dsf < 120) %>%
+s23_rx_uniq_temp %>%
   ggplot(aes(x = dsf)) +
   geom_line(aes(y = (air_temp_max_c * 1.8 + 32) / 2, color = degree_label)) +
   geom_point(aes(y = pib * 100, color = "% Bobwhite in burned units")) +
@@ -722,5 +651,17 @@ gmodel10 <- gam(pib ~ air_temp_max_c,
 
 s22_23_rx_temp_unique
 
+```
+
+```{r}
+#### Testing distance to edge and DSF #### 
+
+s23rx_bu <- s23rx %>%
+  dplyr::filter(burned == 1)
+
+dist_model23 <- lmer(distance_to_edge ~ dsf + (1 | band_numb),
+                   data = s23rx_bu)
+
+summary(dist_model23)
 ```
 
