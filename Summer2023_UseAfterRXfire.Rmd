@@ -51,7 +51,7 @@ s23rx_sc <- s23rx %>%
   mutate(pib = pib + 0.00001)
 
 s23rx_sc1 <- s23rx_sc %>%
-  select(pib, dsf, hg:ps)
+  dplyr::select(pib, dsf, hg:ps)
 
 s23_rx_uniq <- s23rx_sc1[!duplicated(s23rx_sc1), ]
 ```
@@ -110,6 +110,38 @@ s23_rx_uniq %>%
         axis.text.y = element_text(colour = "black", size = 12),
         plot.margin = margin(t = 5, r = 10, b = 5, l = 5, unit = "pt"))
 
+s23_pib_dsf <- s23_rx_uniq %>%
+ dplyr::select(dsf,pib) %>% 
+ view()
+
+s23_pib_dsf$year <- 2023
+
+s22_23_pib_dsf <- rbind(s22_pib_dsf, s23_pib_dsf)
+
+s22_23_pib_dsf %>%
+  ggplot(aes(dsf, pib)) +
+  geom_point() +
+  labs(x = "Days since fire",
+       y = "Proportion of bobwhite in burned areas") +
+  theme_bw() +
+  scale_x_continuous(breaks = c(0, 30, 60, 90, 120, 150), limits = c(NA, 150)) +
+  theme_bw() +
+  theme(legend.position = "none",
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.line = element_line("black"),
+        axis.ticks = element_line("black"),
+        axis.text.x = element_text(colour = "black", size = 12),
+        axis.title.y = element_text(colour = "black", size = 12),
+        axis.title.x = element_text(colour = "black", size = 12),
+        legend.title = element_text(colour = "black", size = 12),
+        legend.text = element_text(colour = "black", size = 12),
+        axis.text.y = element_text(colour = "black", size = 12),
+        plot.margin = margin(t = 5, r = 10, b = 5, l = 5, unit = "pt")) +
+  facet_wrap(~ year)
+
+
+
 ```
 
 2023: Univariate candidate models (GAM)
@@ -122,26 +154,38 @@ gmodel1 <- gam(pib ~ dsf,
                      family=betar(link = "logit"),
                      na.action = "na.pass")
 
+summary(gmodel1)
+
+summary(gmodel1)
+
 
 gmodel2 <- gam(pib ~ pg, 
                   data = s23_rx_uniq,
                   family = betar(link = "logit"),
                   na.action = "na.pass")
 
+summary(gmodel2)
+
 gmodel3 <- gam(pib ~ pf, 
                   data = s23_rx_uniq,
                   family = betar(link = "logit"),
                   na.action = "na.pass")
+
+summary(gmodel3)
 
 gmodel4 <- gam(pib ~ ps,
                   data = s23_rx_uniq,
                   family = betar(link = "logit"),
                   na.action = "na.pass")
 
+summary(gmodel4)
+
 gmodel5 <- gam(pib ~ hg,
                   family = betar(link = "logit"),
                   data = s23_rx_uniq,
                   na.action = "na.pass")
+
+summary(gmodel5)
 
 
 gmodel6 <- gam(pib ~ hf,
@@ -149,10 +193,14 @@ gmodel6 <- gam(pib ~ hf,
                   data = s23_rx_uniq,
                   na.action = "na.pass")
 
+summary(gmodel6)
+
 gmodel7 <- gam(pib ~ hs,
                    family = betar(link = "logit"),
                   data = s23_rx_uniq,
                   na.action = "na.pass")
+
+summary(gmodel7)
 
 gmodel8 <- gam(pib ~ 1,
                   family = betar(link = "logit"),
@@ -222,7 +270,7 @@ write_xlsx(model_comparison_sorted, "/Users/jeffgrayum/Downloads/model_comp23_No
 
 dsf_values <- seq(min(s23_rx_uniq$dsf, na.rm = TRUE), 
                  max(s23_rx_uniq$dsf, na.rm = TRUE), 
-                 length.out = 1000)
+                 length.out = 136)
 
 dsf_df <- data.frame(
   hs = rep(mean(s23_rx_uniq$hs), length(dsf_values)),
@@ -234,14 +282,14 @@ dsf_df <- data.frame(
   dsf = dsf_values
 )
 
-dsf_pred <- data.frame(predict(gmodel1, newdata = dsf_df, type = "response", se.fit = TRUE))
+dsf_pred23 <- data.frame(predict(gmodel1, newdata = dsf_df, type = "response", se.fit = TRUE))
 
 
-dsf_pred$lowCI = (dsf_pred$fit - (1.96 * dsf_pred$se.fit))
-dsf_pred$upperCI = (dsf_pred$fit + (1.96 * dsf_pred$se.fit))
+dsf_pred23$lowCI = (dsf_pred23$fit - (1.96 * dsf_pred23$se.fit))
+dsf_pred23$upperCI = (dsf_pred23$fit + (1.96 * dsf_pred23$se.fit))
 
 
-dsf_pred %>%
+dsf_pred23 %>%
   ggplot(aes(dsf_values, y = fit)) +
   geom_line() +
   geom_ribbon(aes(ymin = lowCI, ymax = upperCI), fill = "red", alpha = 0.2) +
@@ -260,6 +308,181 @@ dsf_pred %>%
         legend.text = element_text(colour = "black", size = 12),
         axis.text.y = element_text(colour = "black", size = 12),
         plot.margin = margin(t = 5, r = 10, b = 5, l = 5, unit = "pt"))
+
+library(ggplot2)
+
+#### Making predict plot for betareg ####
+
+dsf_values <- seq(min(s23_rx_uniq$dsf, na.rm = TRUE), 
+                 max(s23_rx_uniq$dsf, na.rm = TRUE), 
+                 length.out = 136)
+
+dsf_df <- data.frame(
+  hs = rep(mean(s23_rx_uniq$hs), length(dsf_values)),
+  hg = rep(mean(s23_rx_uniq$hg), length(dsf_values)),
+  hf = rep(mean(s23_rx_uniq$hf), length(dsf_values)),
+  pg = rep(mean(s23_rx_uniq$pg), length(dsf_values)),
+  pf = rep(mean(s23_rx_uniq$pf), length(dsf_values)),
+  ps = rep(mean(s23_rx_uniq$ps), length(dsf_values)),
+  dsf = dsf_values
+)
+
+dsf_pred23b <- data.frame(predict(bmodel1, newdata = dsf_df, type = "response"))
+
+
+
+dsf_pred23 %>%
+  ggplot(aes(dsf_values, y = fit)) +
+  geom_line() +
+  labs(x = "Days since fire",
+       y = "Proportion of bobwhite predicted in burned areas") +
+  theme_bw() +
+  theme(legend.position = "none",
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.line = element_line("black"),
+        axis.ticks = element_line("black"),
+        axis.text.x = element_text(colour = "black", size = 12),
+        axis.title.y = element_text(colour = "black", size = 12),
+        axis.title.x = element_text(colour = "black", size = 12),
+        legend.title = element_text(colour = "black", size = 12),
+        legend.text = element_text(colour = "black", size = 12),
+        axis.text.y = element_text(colour = "black", size = 12),
+        plot.margin = margin(t = 5, r = 10, b = 5, l = 5, unit = "pt"))
+
+
+ggplot() +
+  # Raw data points
+  geom_point(data = s23_rx_uniq, aes(x = dsf, y = pib), size = 2) +
+  # Prediction line and ribbon
+  geom_line(data = dsf_pred23, aes(x = dsf_values, y = fit), color = "red", size = 1) +
+  #geom_ribbon(data = dsf_pred23, aes(x = dsf_values, ymin = lowCI, ymax = upperCI), fill = "red", alpha = 0.2) +
+  labs(x = "Days since fire", y = "Proportion of bobwhite in burned areas") +
+  theme_bw() +
+  scale_x_continuous(breaks = c(0, 30, 60, 90, 120, 150), limits = c(NA, 150)) +
+  theme(legend.position = "none",
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.line = element_line("black"),
+        axis.ticks = element_line("black"),
+        axis.text.x = element_text(colour = "black", size = 12, family = "Times New Roman"),
+        axis.title.y = element_text(colour = "black", size = 12, family = "Times New Roman"),
+        axis.title.x = element_text(colour = "black", size = 12, family = "Times New Roman"),
+        legend.title = element_text(colour = "black", size = 12, family = "Times New Roman"),
+        legend.text = element_text(colour = "black", size = 12, family = "Times New Roman"),
+        axis.text.y = element_text(colour = "black", size = 12, family = "Times New Roman"),
+        plot.margin = margin(t = 5, r = 10, b = 5, l = 5, unit = "pt"),
+        plot.title = element_text(family = "Times New Roman"), # For title text if you have one
+        plot.subtitle = element_text(family = "Times New Roman")) # For subtitle text if you have one
+
+
+
+#ChatGPT approach
+# Number of bootstrap replications
+n_boot <- 1000
+
+# Store bootstrap predictions
+boot_preds <- matrix(NA, nrow = n_boot, ncol = length(dsf_values))
+
+# Perform bootstrapping
+set.seed(123) # for reproducibility
+for (i in 1:n_boot) {
+  # Sample with replacement from the original data
+  s23_rx_boot <- s23_rx_uniq[sample(nrow(s23_rx_uniq), replace = TRUE), ]
+  # Fit the model to the bootstrap sample
+  boot_model <- betareg(pib ~ dsf, data = s23_rx_boot, link = "logit")
+  # Predict using the new data
+  boot_preds[i, ] <- predict(boot_model, newdata = dsf_df, type = "response")
+}
+
+
+# Calculate the standard errors of the predictions
+pred_se <- apply(boot_preds, 2, sd)
+
+# Calculate the 95% confidence intervals using the quantile approach
+ci_lower <- apply(boot_preds, 2, quantile, probs = 0.025)
+ci_upper <- apply(boot_preds, 2, quantile, probs = 0.975)
+
+# Create a data frame for plotting
+dsf_df$PredictedPIB <- predict(bmodel1, newdata = dsf_df, type = "response")
+dsf_df$LowerCI <- ci_lower
+dsf_df$UpperCI <- ci_upper
+
+# Plot with ggplot2
+library(ggplot2)
+
+ggplot(dsf_df, aes(x = dsf)) +
+  geom_ribbon(aes(ymin = LowerCI, ymax = UpperCI), alpha = 0.2, fill = "red") +
+  geom_line(aes(y = PredictedPIB), color = "black") +
+  labs(x = "DSF", y = "Predicted PIB", title = "Predicted PIB vs DSF with 95% CI") +
+  theme_minimal()
+
+# Assuming you already have `dsf_df` with the columns `PredictedPIB`, `LowerCI`, and `UpperCI` calculated
+
+# Combine the raw data plot with the prediction plot
+s23_rx_uniq %>%
+  ggplot(aes(x = dsf)) +
+  geom_point(aes(y = pib), size = 2) + # Plot the raw data points
+  geom_ribbon(data = dsf_df, aes(ymin = LowerCI, ymax = UpperCI), alpha = 0.2, fill = "red") + # Add the CI as a shaded area
+  geom_line(data = dsf_df, aes(y = PredictedPIB), color = "black") + # Add the predicted line
+  scale_x_continuous(breaks = c(0, 30, 60, 90, 120, 150), limits = c(NA, 150)) +
+  labs(
+    x = "Days since fire",
+    y = "Proportion of bobwhite in burned areas"
+  ) +
+  theme_bw() +
+  theme(
+    legend.position = "none",
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.line = element_line(color = "black"),
+    axis.ticks = element_line(color = "black"),
+    axis.text.x = element_text(color = "black", size = 12),
+    axis.title.y = element_text(color = "black", size = 12),
+    axis.title.x = element_text(color = "black", size = 12),
+    legend.title = element_text(color = "black", size = 12),
+    legend.text = element_text(color = "black", size = 12),
+    axis.text.y = element_text(color = "black", size = 12),
+    plot.margin = margin(t = 5, r = 10, b = 5, l = 5, unit = "pt")
+  )
+
+
+```
+
+```{r}
+# New data for prediction
+DSF_values <- seq(min(s23_rx_uniq$dsf, na.rm = TRUE), 
+                  max(s23_rx_uniq$dsf, na.rm = TRUE), 
+                  length.out = 100)
+
+pred_data <- data.frame(dsf = DSF_values) # Corrected variable name here
+
+# Predicting values
+pred_data$predicted_pib <- predict(bmodel1, newdata = pred_data, type = "response") # Use the corrected data frame name
+
+# Plotting observed data points, saving to p
+p <- s23_rx_uniq %>%
+  ggplot(aes(dsf, pib)) +
+  geom_point(size = 2) + # Plotting the observed data points
+  labs(x = "Days since fire",
+       y = "Proportion of bobwhite in burned areas") +
+  theme_bw() +
+  theme(legend.position = "none",
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.line = element_line("black"),
+        axis.ticks = element_line("black"),
+        axis.text.x = element_text(colour = "black", size = 12),
+        axis.title.y = element_text(colour = "black", size = 12),
+        axis.title.x = element_text(colour = "black", size = 12),
+        legend.title = element_text(colour = "black", size = 12),
+        legend.text = element_text(colour = "black", size = 12),
+        axis.text.y = element_text(colour = "black", size = 12),
+        plot.margin = margin(t = 5, r = 10, b = 5, l = 5, unit = "pt"))
+
+# Adding prediction line
+p + geom_line(data = pred_data, aes(x = dsf, y = predicted_pib), color = "red", size = 1)
+
 ```
 
 Let's try combining 2023/23 data
@@ -338,16 +561,68 @@ gmodel8 <- gam(pib ~ 1,
 
 ```
 
-Ranking candidate models (gam)
+```{r}
+#Univariate candidate models (GLM2023
+
+#### Candidate models (GLM 2023 #### 
+
+bmodel1 <- betareg(pib ~ dsf,
+                     data = s23_rx_uniq,
+                     link = "logit",
+                     na.action = "na.pass")
+
+summary(bmodel1)
+
+
+bmodel2 <- betareg(pib ~ pg, 
+                  data = s23_rx_uniq,
+                  link = "logit",
+                  na.action = "na.pass")
+
+bmodel3 <- betareg(pib ~ pf, 
+                  data = s23_rx_uniq,
+                  link = "logit",
+                  na.action = "na.pass")
+
+bmodel4 <- betareg(pib ~ ps,
+                  data = s23_rx_uniq,
+                  link = "logit",
+                  na.action = "na.pass")
+
+bmodel5 <- betareg(pib ~ hg,
+                  link = "logit",
+                  data = s23_rx_uniq,
+                  na.action = "na.pass")
+
+
+bmodel6 <- betareg(pib ~ hf,
+                  link = "logit",
+                  data = s23_rx_uniq,
+                  na.action = "na.pass")
+
+
+bmodel7 <- betareg(pib ~ hs,
+                  link = "logit",
+                  data = s23_rx_uniq,
+                  na.action = "na.pass")
+
+bmodel8 <- betareg(pib ~ 1,
+                  link = "logit",
+                  data = s23_rx_uniq,
+                  na.action = "na.pass")
+
+```
+
+Ranking candidate models (betareg)
 ```{r}
 
-#### Ranking gam models 2022/23 ####
+#### Ranking betareg models 2023 ####
 # Creating a data frame to store model names and their AIC values
-model_names <- c(paste0("gmodel", 1:8))
+model_names <- c(paste0("bmodel", 1:8))
 
 
-model_list <- list(gmodel1, gmodel2, gmodel3, gmodel4,
-                   gmodel5, gmodel6, gmodel7, gmodel8)
+model_list <- list(bmodel1, bmodel2, bmodel3, bmodel4,
+                   bmodel5, bmodel6, bmodel7, bmodel8)
 
 
 model_aic <- sapply(model_list, AIC)
@@ -380,9 +655,66 @@ model_comparison_sorted$weight <- round(model_comparison_sorted$weight,3)
 
 model_comparison_sorted %>% view
 
-write_xlsx(model_comparison_sorted, "/Users/jeffgrayum/Downloads/model_comparison22_23fixed.xlsx")
+#write_xlsx(model_comparison_sorted, "/Users/jeffgrayum/Downloads/model_comparison22_23fixed.xlsx")
 ```
 
+Adding AICc
+```{r}
+#### Adding AICc ####
+
+# Function to calculate AICc
+calculate_AICc <- function(model) {
+  n <- length(model$model[,1])  
+  k <- length(coef(model))
+  aic <- AIC(model)
+  aicc <- aic + (2 * k * (k + 1)) / (n - k - 1)
+  return(aicc)
+}
+
+# Applying the AICc calculation for each model
+model_aicc <- sapply(model_list, calculate_AICc)
+
+# Adding AICc values to the model comparison data frame
+model_comparison <- data.frame(Model = model_names, AIC = model_aic, AICc = model_aicc, nll = - model_nll)
+
+# Sort the models by AIC (not AICc) value as per instruction
+model_comparison_sorted <- model_comparison %>%
+  arrange(AIC)
+
+# Calculate the minimum AIC value among all models for Delta AIC calculation
+min_aic <- min(model_comparison_sorted$AIC)
+
+# Add a column for Delta AIC based on AIC (not AICc)
+model_comparison_sorted <- model_comparison_sorted %>%
+  mutate(Delta_AIC = AIC - min_aic)
+
+# Relative likelihood and weights calculation remains the same
+model_comparison_sorted$rll <- exp(-0.5*model_comparison_sorted$Delta_AIC)
+model_comparison_sorted$weight <- model_comparison_sorted$rll / sum(model_comparison_sorted$rll)
+model_comparison_sorted$weight <- round(model_comparison_sorted$weight, 3)
+
+
+
+# Sort the models by AIC (not AICc) value as per original instructions
+model_comparison_sorted <- model_comparison %>%
+  arrange(AIC)
+
+# Calculate the minimum AICc value among all models for Delta AICc calculation
+min_aicc <- min(model_comparison_sorted$AICc)
+
+# Add a column for Delta AICc based on AICc
+model_comparison_sorted <- model_comparison_sorted %>%
+  mutate(Delta_AICc = AICc - min_aicc)
+
+# Relative likelihood and weights calculation should be updated to use Delta AICc if desired
+model_comparison_sorted$rll <- exp(-0.5*model_comparison_sorted$Delta_AICc)
+model_comparison_sorted$weight <- model_comparison_sorted$rll / sum(model_comparison_sorted$rll)
+model_comparison_sorted$weight <- round(model_comparison_sorted$weight, 3)
+
+# Print the updated data frame to view changes
+print(model_comparison_sorted)
+
+```
 
 
 
@@ -555,8 +887,8 @@ s23rx %>%
 
 
 ```{r}
-
-degree_label <- paste0("Max ambient temp (", "\u00B0", "F)")
+#### Temp/pib ####
+degree_label <- paste0("Max ambient temp (", "\u00B0", "C)")
 
 # Color mapping
 color_map <- setNames(c("red", "black", "blue"), c(degree_label, "% Bobwhite in burned units", "Bobwhite thermal stress threshold"))
@@ -564,29 +896,121 @@ color_map <- setNames(c("red", "black", "blue"), c(degree_label, "% Bobwhite in 
 # Assuming s22rx exists and has the relevant columns
 # Create dashed line data
 dashed_line_data <- data.frame(dsf = c(min(s23rx$dsf), max(s23rx$dsf)),
-                               y = c(86.5 / 2, 86.5 / 2))
+                               y = c(30.4 * 1.5, 30.4 * 1.5))
 
 s23_rx_uniq_temp %>%
   ggplot(aes(x = dsf)) +
-  geom_line(aes(y = (air_temp_max_c * 1.8 + 32) / 2, color = degree_label)) +
+  geom_line(aes(y = air_temp_max_c * 1.5, color = degree_label)) +
   geom_point(aes(y = pib * 100, color = "% Bobwhite in burned units")) +
   geom_line(data = dashed_line_data, aes(y = y, color = "Bobwhite thermal stress threshold"), linetype = "dashed") +
   scale_y_continuous(
     name = "% Bobwhite in burned units",
-    sec.axis = sec_axis(~ . * 2, name = degree_label)
+    sec.axis = sec_axis(~ . / 1.5, name = degree_label)
   ) +
   scale_color_manual(
     values = color_map,
     name = ""
   ) +
   labs(x = "Days since fire",
-       y = "% sampled bobwhite in burned units",
-       title = "Use of burned units after prescribed fire\nand max ambient temp (2023)") +
+       y = "% sampled bobwhite in burned units") +
   theme_bw() +
-  scale_x_continuous(breaks = c(0, 30, 60, 90, 120))
+  theme(legend.position = "none",
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.line = element_line("black"),
+        axis.ticks = element_line("black"),
+        axis.text.x = element_text(colour = "black", size = 12),
+        axis.title.y = element_text(colour = "black", size = 12),
+        axis.title.x = element_text(colour = "black", size = 12),
+        legend.title = element_text(colour = "black", size = 12),
+        legend.text = element_text(colour = "black", size = 12),
+        axis.text.y = element_text(colour = "black", size = 12)) +
+  scale_x_continuous(breaks = c(0, 30, 60, 90, 120, 150))
 
 
-#* 1.8 + 32) / 2
+s23_rx_uniq_temp_sel <- s23_rx_uniq_temp %>%
+  dplyr::select(pib, dsf, air_temp_max_c, year)
+
+s23_rx_uniq_temp_sel <- s23_rx_uniq_temp_sel %>%
+  rename(DSF = dsf)
+
+s22_23_rx_uniq_temp_sel <- rbind(s22_rx_uniq_temp_sel, s23_rx_uniq_temp_sel)
+
+dashed_line_data <- data.frame(DSF = c(min(s23rx$dsf), max(s23rx$dsf)),
+                               y = c(30.4 * 1.5, 30.4 * 1.5))
+
+s22_23_rx_uniq_temp_sel %>%
+  ggplot(aes(x = DSF)) +
+  geom_line(aes(y = air_temp_max_c * 1.5, color = degree_label)) +
+  geom_point(aes(y = pib * 100, color = "% Bobwhite in burned units")) +
+  geom_line(data = dashed_line_data, aes(y = y, color = "Bobwhite thermal stress threshold"), linetype = "dashed") +
+  scale_y_continuous(
+    name = "% Bobwhite in burned units",
+    sec.axis = sec_axis(~ . / 1.5, name = degree_label)
+  ) +
+  scale_color_manual(
+    values = color_map,
+    name = ""
+  ) +
+  labs(x = "Days since fire",
+       y = "% sampled bobwhite in burned units") +
+  theme_bw() +
+  theme(legend.position = "none",
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.line = element_line("black"),
+        axis.ticks = element_line("black"),
+        axis.text.x = element_text(colour = "black", size = 12, family = "Times New Roman"),
+        axis.title.y = element_text(colour = "black", size = 12, family = "Times New Roman"),
+        axis.title.x = element_text(colour = "black", size = 12, family = "Times New Roman"),
+        legend.title = element_text(colour = "black", size = 12, family = "Times New Roman"),
+        legend.text = element_text(colour = "black", size = 12, family = "Times New Roman"),
+        strip.text = element_text(family = "Times New Roman"),
+        axis.text.y = element_text(colour = "black", size = 12, family = "Times New Roman")) +
+  scale_x_continuous(breaks = c(0, 30, 60, 90, 120, 150)) +
+  facet_wrap(~ year)
+
+library(ggplot2)
+library(dplyr)
+
+s22_23_rx_uniq_temp_sel %>%
+  ggplot(aes(x = DSF)) +
+  geom_line(aes(y = air_temp_max_c * 1.5, color = degree_label)) +
+  geom_point(aes(y = pib * 100, color = "% Bobwhite in burned units")) +
+  geom_line(data = dashed_line_data, aes(y = y, color = "Bobwhite thermal stress threshold"), linetype = "dashed") +
+  scale_y_continuous(
+    name = "% Bobwhite in burned units",
+    sec.axis = sec_axis(~ . / 1.5, name = degree_label)
+  ) +
+  scale_color_manual(
+    values = color_map,
+    name = ""
+  ) +
+  labs(x = "Days since fire",
+       y = "% sampled bobwhite in burned units") +
+  theme_bw() +
+  theme(legend.position = "none",
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.line = element_line("black"),
+        axis.ticks = element_line("black"),
+        axis.text.x = element_text(colour = "black", size = 12, family = "Times New Roman"),
+        axis.title.y = element_text(colour = "black", size = 12, family = "Times New Roman"),
+        axis.title.x = element_text(colour = "black", size = 12, family = "Times New Roman"),
+        legend.title = element_text(colour = "black", size = 12, family = "Times New Roman"),
+        legend.text = element_text(colour = "black", size = 12, family = "Times New Roman"),
+        axis.text.y = element_text(colour = "black", size = 12, family = "Times New Roman"),
+        strip.text = element_text(family = "Times New Roman"), # For facet labels
+        plot.title = element_text(family = "Times New Roman"), # For plot title if you have one
+        plot.subtitle = element_text(family = "Times New Roman")) # For plot subtitle if you have one
+  +
+  scale_x_continuous(breaks = c(0, 30, 60, 90, 120, 150)) +
+  facet_wrap(~ year)
+
+
+
+
+
 ```
 
 
@@ -663,5 +1087,178 @@ dist_model23 <- lmer(distance_to_edge ~ dsf + (1 | band_numb),
                    data = s23rx_bu)
 
 summary(dist_model23)
+
+lowerCI <- 0.008575 - (1.96 * 0.040563)
+upperCI <- 0.008575 + (1.96 * 0.040563)
+
+#Making predict plots
+
+#Making the predict plot with 95% bootstrapped credible intervals.
+
+dist_pred23 <-lmer(distance_to_edge ~ dsf + (1|band_numb), data = s23rx_bu)
+
+predicted_values23 <- modelr::data_grid(s23rx_bu, distance_to_edge, dsf, band_numb) %>% 
+                      modelr::add_predictions(dist_pred23)
+
+pred_dist_23 <- predicted_values23 %>%
+group_by(dsf) %>%
+  summarize(mean_fit = mean(pred),
+            low_ci = quantile(pred, 0.025),
+            upper_ci = quantile(pred, 0.975))
+
+pred_dist_23 %>%
+  ggplot(aes(dsf, mean_fit)) +
+  geom_line() +
+ geom_ribbon(aes(ymin = low_ci, ymax = upper_ci), fill = "red", alpha = 0.2) +
+   labs(x = "Days since fire",
+       y = "Bobwhite distance from edge of burn units") +
+  theme_bw() +
+ theme(legend.position = "none",
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.line = element_line("black"),
+        axis.ticks = element_line("black"),
+        axis.text.x = element_text(colour = "black", size = 12),
+        axis.title.y = element_text(colour = "black", size = 12),
+        axis.title.x = element_text(colour = "black", size = 12),
+        legend.title = element_text(colour = "black", size = 12),
+        legend.text = element_text(colour = "black", size = 12),
+        axis.text.y = element_text(colour = "black", size = 12),
+        plot.margin = margin(t = 5, r = 10, b = 5, l = 5, unit = "pt"))
+
+library(ggplot2)
+library(dplyr)
+
+ggplot() +
+  # Raw data points
+  geom_point(data = s23rx %>% dplyr::filter(burned == 1), aes(x = dsf, y = distance_to_edge), size = 1) +
+  # Prediction line and ribbon
+  geom_line(data = pred_dist_23, aes(x = dsf, y = mean_fit)) +
+  geom_ribbon(data = pred_dist_23, aes(x = dsf, ymin = low_ci, ymax = upper_ci), fill = "red", alpha = 0.2) +
+  labs(x = "Days since fire", y = "Distance from edge (m)") +
+  theme_bw() +
+  theme(legend.position = "none",
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.line = element_line("black"),
+        axis.ticks = element_line("black"),
+        axis.text.x = element_text(colour = "black", size = 12, family = "Times New Roman"),
+        axis.title.y = element_text(colour = "black", size = 12, family = "Times New Roman"),
+        axis.title.x = element_text(colour = "black", size = 12, family = "Times New Roman"),
+        legend.title = element_text(colour = "black", size = 12, family = "Times New Roman"),
+        legend.text = element_text(colour = "black", size = 12, family = "Times New Roman"),
+        axis.text.y = element_text(colour = "black", size = 12, family = "Times New Roman"),
+        plot.margin = margin(t = 5, r = 10, b = 5, l = 5, unit = "pt"),
+        plot.title = element_text(family = "Times New Roman"), # For title text if you have one
+        plot.subtitle = element_text(family = "Times New Roman")) # For subtitle text if you have one
+
+
+
+```
+
+```{r}
+s22_23_dist <- rbind(s22rx %>% select(burned, distance_to_edge), s23rx %>% select(burned, distance_to_edge))
+
+s22_23_dist <- s22_23_dist %>%
+  rename(Burned = burned)
+
+s22_23_dist %>%
+  dplyr::filter(Burned == 1) %>%
+  summarize(median_dte = median(distance_to_edge))
+
+s22_23_dist %>%
+  dplyr::filter(Burned == 0) %>%
+  summarize(median_dte = median(distance_to_edge))
+
+s22_23_dist %>%
+  ggplot(aes(distance_to_edge, fill = factor(Burned))) +
+  geom_histogram() +
+  scale_fill_manual(values = c("blue", "red")) +
+  labs(x = "Distance to edge of burn unit (m)",
+       y = "Count") +
+  theme_bw() +
+  theme(legend.position = "none",
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.line = element_line("black"),
+        axis.ticks = element_line("black"),
+        axis.text.x = element_text(colour = "black", size = 12),
+        axis.title.y = element_text(colour = "black", size = 12),
+        axis.title.x = element_text(colour = "black", size = 12),
+        legend.title = element_text(colour = "black", size = 12),
+        legend.text = element_text(colour = "black", size = 12),
+        axis.text.y = element_text(colour = "black", size = 12),
+        plot.margin = margin(t = 5, r = 10, b = 5, l = 5, unit = "pt")) +
+  geom_vline(xintercept = c(26.7), linetype = "dashed", color = "red") +
+    geom_vline(xintercept = c(26.7), linetype = "dashed", color = "blue")
+
+s22_23_dist %>%
+  ggplot(aes(y = distance_to_edge, group = as.factor(Burned), fill = Burned)) +
+  geom_boxplot(alpha = 0.5) +
+  scale_fill_manual(values = c("blue", "red")) +
+  labs(x = "Burn status",
+       y = "Distance to edge of burn unit (m)") +
+  theme_bw() +
+  theme(legend.position = "none",
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.line = element_line("black"),
+        axis.ticks = element_line("black"),
+        axis.text.x = element_text(colour = "black", size = 12),
+        axis.title.y = element_text(colour = "black", size = 12),
+        axis.title.x = element_text(colour = "black", size = 12),
+        legend.title = element_text(colour = "black", size = 12),
+        legend.text = element_text(colour = "black", size = 12),
+        axis.text.y = element_text(colour = "black", size = 12),
+        plot.margin = margin(t = 5, r = 10, b = 5, l = 5, unit = "pt")) 
+
+```
+
+```{r}
+veglong_22_23_cover %>%
+  ggplot(aes(dsf, value/100, color = Year)) +
+  geom_line() +
+  facet_wrap(~ measurement) +
+  theme_bw() +
+  theme(legend.position = "right",
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.line = element_line("black"),
+        axis.ticks = element_line("black"),
+        axis.text.x = element_text(colour = "black", size = 12),
+        axis.title.y = element_text(colour = "black", size = 12),
+        axis.title.x = element_text(colour = "black", size = 12),
+        legend.title = element_text(colour = "black", size = 12),
+        legend.text = element_text(colour = "black", size = 12),
+        axis.text.y = element_text(colour = "black", size = 12),
+        plot.margin = margin(t = 5, r = 10, b = 5, l = 5, unit = "pt")) +
+  labs(x = "Days since fire",
+       y = "Ground cover") 
+
+veglong_22_23_height %>%
+  ggplot(aes(dsf, value, color = Year)) +
+  geom_line() +
+  facet_wrap(~ measurement) +
+  theme_bw() +
+  theme(legend.position = "right",
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.line = element_line("black"),
+        axis.ticks = element_line("black"),
+        axis.title.y = element_text(colour = "black", size = 12),
+        legend.title = element_text(colour = "black", size = 12),
+        legend.text = element_text(colour = "black", size = 12),
+        axis.text.y = element_text(colour = "black", size = 12),
+        plot.margin = margin(t = 5, r = 10, b = 5, l = 5, unit = "pt")) +
+  labs(x = "Days-since-fire", # Remove x-axis label
+       y = "Height (cm)") 
+
+```
+
+How many birds used burned areas in 2023?
+```{r}
+NOBO_count23 <- s23rx %>%
+  dplyr::filter(burned == 1) %>%
+  count(band_numb, sort = TRUE)
 ```
 
