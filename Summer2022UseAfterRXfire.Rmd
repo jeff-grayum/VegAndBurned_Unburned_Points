@@ -1,4 +1,9 @@
----
+---
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+---
 title: "Summer2022UseAfterRXfire"
 output: html_document
 date: "2023-09-21"
@@ -202,10 +207,28 @@ s22rx %>%
        title = "Distance to edge following prescribed fire")
 
 s22dist <- s22rx %>%
-  select(burned, distance_to_edge)
+  dplyr::select(burned, distance_to_edge)
 
 ```
 
+Centering and scaling vegetation covariates, removing duplicate rows.
+```{r}
+#### Centering and scaling veg covariates. Removing duplicate rows ####
+
+s22rx_sc <- s22rx %>% 
+  mutate_at(vars(pg:hs), .funs = function(x){as.numeric(scale(x, center = T))}) %>%
+  mutate(pib = pib + 0.00001)
+
+s22rx_sc <- s22rx_sc %>%
+  dplyr::select(pib, DSF, pg:hs)
+
+s22rx_uniq <- s22rx_sc %>% 
+  group_by(DSF) %>%
+  slice_head(n = 1) %>%
+  ungroup()
+
+
+```
 
 Making some plots of use of burned areas over time.
 ```{r}
@@ -244,38 +267,21 @@ p + geom_line(data = pred_data, aes(x = DSF, y = predicted_pib), color = "red", 
 
 ```
 
-Centering and scaling vegetation covariates, removing duplicate rows.
-```{r}
-#### Centering and scaling veg covariates. Removing duplicate rows ####
 
-s22rx_sc <- s22rx %>% 
-  mutate_at(vars(pg:hs), .funs = function(x){as.numeric(scale(x, center = T))}) %>%
-  mutate(pib = pib + 0.00001)
-
-s22rx_sc <- s22rx_sc %>%
-  select(pib, DSF, pg:hs)
-
-s22rx_uniq <- s22rx_sc %>% 
-  group_by(DSF) %>%
-  slice_head(n = 1) %>%
-  ungroup()
-
-View(s22rx_uniq)
-```
 
 Checking for correlations 
 ```{r}
 #### Checking for correlations ####
 veg_only <- read_xlsx("/Volumes/Samsung_T5/BOBWHITE_DATA/Clean/VegSurveys/VegSurveys2022.xlsx") %>% 
   clean_names %>%
-  select(percent_grasses:max_shrubs_cm)
+  dplyr::select(percent_grasses:max_shrubs_cm)
 
 #Before centering and scaling
 cor(veg_only)
 
 #After centering and scaling
 csveg <- s22rx_sc %>%
-  select(pg:hs)
+  dplyr::select(pg:hs)
 
 cor(csveg)
 ```
@@ -295,7 +301,7 @@ temp22$DSF <- as.numeric(temp22$date - start_date22)
 
 s22_rx_uniq_temp <- s22rx_uniq %>%
   left_join(temp22, by = "DSF") %>%
-  select(pib:date, air_temp_max_c)
+  dplyr::select(pib:date, air_temp_max_c)
 
 s22_rx_uniq_temp$air_temp_max_c <- ifelse(is.na(s22_rx_uniq_temp$air_temp_max_c), 27.2, s22_rx_uniq_temp$air_temp_max_c)
 
@@ -317,7 +323,7 @@ gmodel1 <- gam(pib ~ pg,
                      family=betar(link = "logit"),
                      na.action = "na.pass")
 
-summary(gmodel2)
+
 
 
 gmodel2 <- gam(pib ~ DSF, 
@@ -356,6 +362,11 @@ gmodel8 <- gam(pib ~ 1,
                   data = s22rx_uniq,
                   na.action = "na.pass")
 
+gmodel9 <- betareg(pib ~ DSF + I(DSF^2),
+                   data = s22rx_uniq,
+                   link = "logit",
+                   na.action = "na.pass")
+
 #gmodel9 <- gam(pib ~  DSF + air_temp_max_c,
                 #  family = betar(link = "logit"),
                 #  data = s22_rx_uniq_temp_mod,
@@ -375,11 +386,11 @@ Ranking candidate models (gam)
 
 #### Ranking gam models 2022 ####
 # Creating a data frame to store model names and their AIC values
-model_names <- c(paste0("gmodel", 1:8))
+model_names <- c(paste0("gmodel", 1:9))
 
 
 model_list <- list(gmodel1, gmodel2, gmodel3, gmodel4,
-                   gmodel5, gmodel6, gmodel7, gmodel8)
+                   gmodel5, gmodel6, gmodel7, gmodel8, gmodel9)
 
 
 model_aic <- sapply(model_list, AIC)
@@ -423,11 +434,6 @@ bmodel1 <- betareg(pib ~ DSF,
                      na.action = "na.pass")
 
 
-summary(bmodel1)
-
-summary(bmodel1)
-
-
 bmodel2 <- betareg(pib ~ pg, 
                   data = s22rx_uniq,
                   link = "logit",
@@ -465,15 +471,65 @@ bmodel8 <- betareg(pib ~ 1,
                   data = s22rx_uniq,
                   na.action = "na.pass")
 
+bmodel9 <- betareg(pib ~ DSF + I(DSF^2),
+                   data = s22rx_uniq,
+                   link = "logit",
+                   na.action = "na.pass")
+
 
 ```
 
-Predict plots with 95% conf int 
+Ranking candidate models (breg)
+```{r}
+
+#### Ranking gam models 2022 ####
+# Creating a data frame to store model names and their AIC values
+model_names <- c(paste0("bmodel", 1:9))
+
+
+model_list <- list(bmodel1, bmodel2, bmodel3, bmodel4,
+                   bmodel5, bmodel6, bmodel7, bmodel8, bmodel9)
+
+
+model_aic <- sapply(model_list, AIC)
+model_nll <- sapply(model_list, logLik)
+
+# Combine the model names and AIC values into a data frame
+model_comparison <- data.frame(Model = model_names, AIC = model_aic, nll = - model_nll)
+
+# Sort the models by AIC value
+model_comparison_sorted <- model_comparison %>% 
+  arrange(AIC)
+
+# View the sorted data frame
+model_comparison_sorted %>% 
+  view()
+
+# Calculate the minimum AIC value among all models
+min_aic <- min(model_comparison_sorted$AIC)
+
+# Add a column for Delta AIC
+model_comparison_sorted <- model_comparison_sorted %>%
+  mutate(Delta_AIC = AIC - min_aic)
+
+# View the updated data frame
+model_comparison_sorted %>% view()
+
+model_comparison_sorted$rll <- exp(-0.5*model_comparison_sorted$Delta_AIC)
+model_comparison_sorted$weight <- model_comparison_sorted$rll/sum(model_comparison_sorted$rll)
+model_comparison_sorted$weight <- round(model_comparison_sorted$weight,3)
+
+model_comparison_sorted %>% view
+```
+
 ```{r}
 #### Predict plots 2022 betatreg ####
+
+# Generating DSF values for prediction
 DSF_values <- seq(min(s22rx_uniq$DSF, na.rm = TRUE), max(s22rx_uniq$DSF, na.rm = TRUE), length.out = 1000)
 newdata <- data.frame(DSF = DSF_values)
 
+# Bootstrapping for confidence intervals
 n_boot <- 1000  # Number of bootstrap samples
 set.seed(123)   # Set seed for reproducibility
 boot_preds <- matrix(NA, nrow = n_boot, ncol = length(DSF_values))
@@ -481,63 +537,38 @@ boot_preds <- matrix(NA, nrow = n_boot, ncol = length(DSF_values))
 for (i in 1:n_boot) {
   resample_indices <- sample(nrow(s22rx_uniq), replace = TRUE)
   resample_data <- s22rx_uniq[resample_indices, ]
-  boot_model <- betareg(pib ~ DSF, data = resample_data, link = "logit", na.action = "na.pass")
+  boot_model <- betareg(pib ~ DSF + I(DSF^2), data = resample_data, link = "logit", na.action = "na.pass")
   boot_preds[i, ] <- predict(boot_model, newdata = newdata, type = "response")
 }
 
-# Calculate the 95% confidence intervals
-ci_lower <- apply(boot_preds, 2, quantile, probs = 0.025)
-ci_upper <- apply(boot_preds, 2, quantile, probs = 0.975)
+# Computing 95% confidence intervals
+newdata$ci_lower <- apply(boot_preds, 2, quantile, probs = 0.025)
+newdata$ci_upper <- apply(boot_preds, 2, quantile, probs = 0.975)
 
-# Calculate the predicted values for the plot
-predicted_pib <- predict(bmodel1, newdata = newdata, type = "response")
-
-
-
-# Assuming newdata already contains DSF, PredictedPIB, LowerCI, and UpperCI
+# Computing predicted PIB values
+newdata$predicted_pib <- predict(bmodel9, newdata = newdata, type = "response")
 
 # Plot the raw data, prediction line, and confidence intervals
-ggplot() +
-  geom_point(data = s22rx_uniq, aes(x = DSF, y = pib), size = 2) +  # Raw data points
-  geom_line(data = newdata, aes(x = DSF, y = predictedPIB), color = "black") +  # Prediction line
-  geom_ribbon(data = newdata, aes(x = DSF, ymin = LowerCI, ymax = UpperCI), alpha = 0.2, fill = "red") +  # Confidence intervals
+ggplot(newdata, aes(x = DSF)) +
+  geom_point(data = s22rx_uniq, aes(x = DSF, y = pib), size = 2, alpha = 0.7) +  # Raw data points
+  geom_line(aes(y = predicted_pib), color = "black", size = 1.2) +  # Prediction line
+  geom_ribbon(aes(ymin = ci_lower, ymax = ci_upper), alpha = 0.2, fill = "red") +  # Confidence intervals
   labs(x = "Days since fire", y = "Proportion of bobwhite in burned areas") +
   theme_bw() +
-  scale_x_continuous(breaks = c(0, 30, 60, 90, 120, 150), limits = c(NA, 150)) +
-  theme(legend.position = "none",
-        panel.grid.major = element_blank(),
-        panel.grid.minor = element_blank(),
-        axis.line = element_line(color = "black"),
-        axis.ticks = element_line(color = "black"),
-        axis.text.x = element_text(color = "black", size = 12),
-        axis.title.y = element_text(color = "black", size = 12),
-        axis.title.x = element_text(color = "black", size = 12),
-        plot.margin = margin(t = 5, r = 10, b = 5, l = 5, unit = "pt"))
-
-
-# Add the predicted values to the newdata data frame
-newdata$predicted_pib <- predicted_pib  # Ensure this name matches in your ggplot call
-
-# Plot the raw data, prediction line, and confidence intervals
-ggplot() +
-  geom_point(data = s22rx_uniq, aes(x = DSF, y = pib), size = 2) +  # Raw data points
-  geom_line(data = newdata, aes(x = DSF, y = predicted_pib), color = "black") +  # Prediction line
-  geom_ribbon(data = newdata, aes(x = DSF, ymin = ci_lower, ymax = ci_upper), alpha = 0.2, fill = "red") +  # Confidence intervals
-  labs(x = "Days since fire", y = "Proportion of bobwhite in burned areas") +
-  theme_bw() +
-  scale_x_continuous(breaks = c(0, 30, 60, 90, 120), limits = c(NA, 120)) +
-  theme(legend.position = "none",
-        panel.grid.major = element_blank(),
-        panel.grid.minor = element_blank(),
-        axis.line = element_line(color = "black"),
-        axis.ticks = element_line(color = "black"),
-        axis.text.x = element_text(color = "black", size = 12),
-        axis.title.y = element_text(color = "black", size = 12),
-        axis.title.x = element_text(color = "black", size = 12),
-        plot.margin = margin(t = 5, r = 10, b = 5, l = 5, unit = "pt"))
+  scale_x_continuous(breaks = c(0, 30, 60, 90, 120, 150), limits = c(min(DSF_values), max(DSF_values))) +
+  theme(
+    legend.position = "none",
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.line = element_line(color = "black"),
+    axis.ticks = element_line(color = "black"),
+    axis.text.x = element_text(color = "black", size = 12),
+    axis.title.y = element_text(color = "black", size = 12),
+    axis.title.x = element_text(color = "black", size = 12),
+    plot.margin = margin(t = 5, r = 10, b = 5, l = 5, unit = "pt")
+  )
 
 ```
-
 
 ```{r}         
 
