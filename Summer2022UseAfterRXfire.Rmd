@@ -524,12 +524,9 @@ model_comparison_sorted %>% view
 
 ```{r}
 #### Predict plots 2022 betatreg ####
-
-# Generating DSF values for prediction
 DSF_values <- seq(min(s22rx_uniq$DSF, na.rm = TRUE), max(s22rx_uniq$DSF, na.rm = TRUE), length.out = 1000)
 newdata <- data.frame(DSF = DSF_values)
 
-# Bootstrapping for confidence intervals
 n_boot <- 1000  # Number of bootstrap samples
 set.seed(123)   # Set seed for reproducibility
 boot_preds <- matrix(NA, nrow = n_boot, ncol = length(DSF_values))
@@ -541,19 +538,23 @@ for (i in 1:n_boot) {
   boot_preds[i, ] <- predict(boot_model, newdata = newdata, type = "response")
 }
 
-# Computing 95% confidence intervals
-newdata$ci_lower <- apply(boot_preds, 2, quantile, probs = 0.025)
-newdata$ci_upper <- apply(boot_preds, 2, quantile, probs = 0.975)
+# Calculate the 95% confidence intervals
+ci_lower <- apply(boot_preds, 2, quantile, probs = 0.025)
+ci_upper <- apply(boot_preds, 2, quantile, probs = 0.975)
 
-# Computing predicted PIB values
-newdata$predicted_pib <- predict(bmodel9, newdata = newdata, type = "response")
+# Calculate the predicted values for the plot
+predicted_pib <- predict(bmodel9, newdata = newdata, type = "response")
+
+
+
+# Assuming newdata already contains DSF, PredictedPIB, LowerCI, and UpperCI
 
 # Plot the raw data, prediction line, and confidence intervals
 ggplot(newdata, aes(x = DSF)) +
-  geom_point(data = s22rx_uniq, aes(x = DSF, y = pib), size = 2, alpha = 0.7) +  # Raw data points
+  geom_point(data = s22rx_uniq, aes(x = DSF, y = (pib)), size = 2, alpha = 0.7) +  # Raw data points
   geom_line(aes(y = predicted_pib), color = "black", size = 1.2) +  # Prediction line
   geom_ribbon(aes(ymin = ci_lower, ymax = ci_upper), alpha = 0.2, fill = "red") +  # Confidence intervals
-  labs(x = "Days since fire", y = "Proportion of bobwhite in burned areas") +
+  labs(x = "Days since fire", y = "Proportion of bobwhite in burned areas", title = "2022: Quadratic DSF") +
   theme_bw() +
   scale_x_continuous(breaks = c(0, 30, 60, 90, 120, 150), limits = c(min(DSF_values), max(DSF_values))) +
   theme(
