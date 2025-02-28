@@ -1053,6 +1053,57 @@ s22rx %>%
 ```
 
 ```{r}
+library(MASS)  # For mvrnorm
+
+library(MASS)  # For mvrnorm
+
+# Generate DSF values for prediction
+DSF_values <- seq(min(s22rx_uniq$DSF, na.rm = TRUE), max(s22rx_uniq$DSF, na.rm = TRUE), length.out = 1000)
+newdata <- data.frame(DSF = DSF_values, DSF2 = DSF_values^2)  # Include quadratic term
+
+# Extract model coefficients and variance-covariance matrix
+coefs <- coef(bmodel9)         # Extract coefficients (vector of length = 3)
+vcov_matrix <- vcov(bmodel9)   # Variance-covariance matrix (3 x 3)
+
+# Check the structure of coefs
+print(length(coefs))  # Should be 3
+print(dim(vcov_matrix))  # Should be (3 x 3)
+
+# Design matrix for new predictions
+X <- as.matrix(cbind(1, newdata$DSF, newdata$DSF2))  # (1000 x 3) matrix
+
+# Generate bootstrapped coefficient samples (instead of refitting models)
+n_boot <- 1000
+boot_coefs <- MASS::mvrnorm(n = n_boot, mu = coefs, Sigma = vcov_matrix)
+
+# 🔥 Fix: If `boot_coefs` is a vector (not matrix), force it into the correct shape
+if (is.vector(boot_coefs)) {
+  boot_coefs <- matrix(boot_coefs, ncol = length(coefs), byrow = TRUE)
+}
+
+# Double-check matrix dimensions
+print(dim(boot_coefs))  # Should be (1000 x 3)
+print(dim(X))  # Should be (1000 x 3)
+
+# ✅ Now we do matrix multiplication correctly
+boot_preds <- X %*% t(boot_coefs)  # (1000 x 3) %*% (3 x 1000) → (1000 x 1000)
+
+# Convert logit-scale predictions to probability scale
+boot_probs <- plogis(boot_preds)  # Apply inverse logit
+
+# Compute 95% confidence intervals
+newdata$ci_lower <- apply(boot_probs, 1, quantile, probs = 0.025)
+newdata$ci_upper <- apply(boot_probs, 1, quantile, probs = 0.975)
+newdata$predicted_pib <- plogis(X %*% coefs)  # Mean predicted value
+
+# Plot with corrected confidence intervals
+ggplot(newdata, aes(x = DSF)) +
+  geom_point(data = s22rx_uniq, aes(x = DSF, y = pib), size = 2, alpha = 0.7) +  # Raw data points
+  geom
+
+```
+
+```{r}
 
 #### Making a temp data frame ####
 s22_rx_uniq_temp <- s22_rx_uniq %>%
@@ -1072,4 +1123,118 @@ gmodel10 <- gam(pib ~  air_temp_max_c,
                   na.action = "na.pass")
 
 summary(gmodel9)
+```
+
+
+```{r}
+# Load necessary libraries
+library(ggplot2)
+library(dplyr)
+library(lme4)
+library(tidyr)
+library(scales)  # For better axis formatting
+
+# Convert date column to Date format
+veg_data_2022$date <- as.Date(veg_data_2022$date)
+
+# Define burn date
+burn_date <- as.Date("2022-04-11")
+
+# Convert date to days_since_fire
+veg_data_2022 <- veg_data_2022 %>%
+  mutate(days_since_fire = as.numeric(date - burn_date))
+
+# ---------------------------
+# Fit Mixed-Effects Models with Quadratic Term for days_since_fire
+# ---------------------------
+# Models for vegetation height
+grass_height_model <- lmer(max_grasses_cm ~ days_since_fire + I(days_since_fire^2) + (1 | unit/sample), data = veg_data_2022)
+forb_height_model  <- lmer(max_forbs_cm ~ days_since_fire + I(days_since_fire^2) + (1 | unit/sample), data = veg_data_2022)
+shrub_height_model <- lmer(max_shrubs_cm ~ days_since_fire + I(days_since_fire^2) + (1 | unit/sample), data = veg_data_2022)
+
+# Models for percent cover
+grass_cover_model <- lmer(percent_grasses ~ days_since_fire + I(days_since_fire^2) + (1 | unit/sample), data = veg_data_2022)
+forb_cover_model  <- lmer(percent_forbs ~ days_since_fire + I(days_since_fire^2) + (1 | unit/sample), data = veg_data_2022)
+shrub_cover_model <- lmer(percent_shrubs ~ days_since_fire + I(days_since_fire^2) + (1 | unit/sample), data = veg_data_2022)
+
+# ---------------------------
+# Generate Predictions with Confidence Intervals
+# ---------------------------
+# Create a sequence of days_since_fire for prediction
+pred_days <- data.frame(days_since_fire = seq(0, max(veg_data_2022$days_since_fire, na.rm = TRUE), by = 1))
+# Add quadratic term to prediction data
+pred_days <- pred_days %>%
+  mutate(days_since_fire_sq = days_since_fire^2)
+
+# Define a function to compute predictions and 95% CI
+get_predictions <- function(model, newdata) {
+  preds <- predict(model, newdata = newdata, re.form = NA, se.fit = TRUE)
+  newdata$fit <- pmax(0, preds$fit)  # Set minimum bound at 0
+  newdata$lwr <- pmax(0, preds$fit - 1.96 * preds$se.fit)
+  newdata$upr <- pmax(0, preds$fit + 1.96 * preds$se.fit)
+  return(newdata)
+}
+
+
+# Generate predictions for each model
+pred_height_grass <- get_predictions(grass_height_model, pred_days) %>% mutate(variable = "Grass Height (cm)", type = "Height")
+pred_height_forb  <- get_predictions(forb_height_model, pred_days) %>% mutate(variable = "Forb Height (cm)", type = "Height")
+pred_height_shrub <- get_predictions(shrub_height_model, pred_days) %>% mutate(variable = "Shrub Height (cm)", type = "Height")
+
+pred_cover_grass <- get_predictions(grass_cover_model, pred_days) %>% mutate(variable = "Grass Cover (%)", type = "Cover")
+pred_cover_forb  <- get_predictions(forb_cover_model, pred_days) %>% mutate(variable = "Forb Cover (%)", type = "Cover")
+pred_cover_shrub <- get_predictions(shrub_cover_model, pred_days) %>% mutate(variable = "Shrub Cover (%)", type = "Cover")
+
+# Combine all predictions into one data frame
+pred_all <- bind_rows(pred_height_grass, pred_height_forb, pred_height_shrub,
+                      pred_cover_grass, pred_cover_forb, pred_cover_shrub)
+
+# Ensure the facet order is as desired
+pred_all$variable <- factor(pred_all$variable, 
+                            levels = c("Grass Height (cm)", "Forb Height (cm)", "Shrub Height (cm)",
+                                       "Grass Cover (%)", "Forb Cover (%)", "Shrub Cover (%)"))
+
+# ---------------------------
+# Define Custom Colors
+# ---------------------------
+custom_colors <- c("Grass Height (cm)" = "green3",
+                   "Forb Height (cm)"  = "darkorange2",
+                   "Shrub Height (cm)" = "saddlebrown",
+                   "Grass Cover (%)"   = "green3",
+                   "Forb Cover (%)"    = "darkorange2",
+                   "Shrub Cover (%)"   = "saddlebrown")
+
+# ---------------------------
+# Plot Predictions with 95% Confidence Intervals
+# ---------------------------
+ggplot(pred_all, aes(x = days_since_fire + 5, y = fit, color = variable, fill = variable)) +
+  geom_line(size = 1) +
+  geom_ribbon(aes(ymin = lwr, ymax = upr), alpha = 0.2, color = NA) +
+  facet_wrap(~variable, scales = "free_y", nrow = 2) +  # Top row: height, Bottom row: % cover
+  labs(title = "Predicted Vegetation Growth and Cover Over Time",
+       x = "Days Since Fire", y = "Predicted Value") +
+  scale_x_continuous(breaks = c(0, 25, 50, 75, 100)) +  # Set specific x-axis tick marks
+  scale_color_manual(values = custom_colors) +
+  scale_fill_manual(values = custom_colors) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, colour="black", size=12, family="Times New Roman"),
+        axis.text.y = element_text(colour="black", size=12, family="Times New Roman"),
+        axis.title.y = element_text(colour="black", size=12, family="Times New Roman"),
+        axis.title.x = element_text(colour="black", size=12, family="Times New Roman"),
+        legend.title = element_text(colour="black", size=12, family="Times New Roman"),
+        legend.text = element_text(colour="black", size=12, family="Times New Roman"),
+        plot.title = element_text(size=14, family="Times New Roman"),
+        plot.subtitle = element_text(size=12, family="Times New Roman"),
+        plot.caption = element_text(size=10, family="Times New Roman"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.line = element_line(color="black"),
+        axis.ticks = element_line(color="black"),
+        legend.position = "none")
+
+        
+
+
+
+        
 ```
