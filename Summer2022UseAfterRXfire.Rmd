@@ -1125,7 +1125,7 @@ gmodel10 <- gam(pib ~  air_temp_max_c,
 summary(gmodel9)
 ```
 
-
+Linear veg predictive models
 ```{r}
 # Load necessary libraries
 library(ggplot2)
@@ -1137,34 +1137,30 @@ library(scales)  # For better axis formatting
 # Convert date column to Date format
 veg_data_2022$date <- as.Date(veg_data_2022$date)
 
-# Define burn date
+# Define burn date and compute days since fire
 burn_date <- as.Date("2022-04-11")
-
-# Convert date to days_since_fire
 veg_data_2022 <- veg_data_2022 %>%
-  mutate(days_since_fire = as.numeric(date - burn_date))
+  mutate(days_since_fire = as.numeric(date - burn_date),
+         sample_new = (unit - 1) * 10 + sample)  # Create sample ID
 
 # ---------------------------
-# Fit Mixed-Effects Models with Quadratic Term for days_since_fire
+# Fit Mixed-Effects Models with Linear Term for days_since_fire
 # ---------------------------
 # Models for vegetation height
-grass_height_model <- lmer(max_grasses_cm ~ days_since_fire + I(days_since_fire^2) + (1 | unit/sample), data = veg_data_2022)
-forb_height_model  <- lmer(max_forbs_cm ~ days_since_fire + I(days_since_fire^2) + (1 | unit/sample), data = veg_data_2022)
-shrub_height_model <- lmer(max_shrubs_cm ~ days_since_fire + I(days_since_fire^2) + (1 | unit/sample), data = veg_data_2022)
+grass_height_model <- lmer(max_grasses_cm ~ days_since_fire + (1 | sample_new), data = veg_data_2022)
+forb_height_model  <- lmer(max_forbs_cm ~ days_since_fire + (1 | sample_new), data = veg_data_2022)
+shrub_height_model <- lmer(max_shrubs_cm ~ days_since_fire + (1 | sample_new), data = veg_data_2022)
 
 # Models for percent cover
-grass_cover_model <- lmer(percent_grasses ~ days_since_fire + I(days_since_fire^2) + (1 | unit/sample), data = veg_data_2022)
-forb_cover_model  <- lmer(percent_forbs ~ days_since_fire + I(days_since_fire^2) + (1 | unit/sample), data = veg_data_2022)
-shrub_cover_model <- lmer(percent_shrubs ~ days_since_fire + I(days_since_fire^2) + (1 | unit/sample), data = veg_data_2022)
+grass_cover_model <- lmer(percent_grasses ~ days_since_fire + (1 | sample_new), data = veg_data_2022)
+forb_cover_model  <- lmer(percent_forbs ~ days_since_fire + (1 | sample_new), data = veg_data_2022)
+shrub_cover_model <- lmer(percent_shrubs ~ days_since_fire + (1 | sample_new), data = veg_data_2022)
 
 # ---------------------------
 # Generate Predictions with Confidence Intervals
 # ---------------------------
 # Create a sequence of days_since_fire for prediction
 pred_days <- data.frame(days_since_fire = seq(0, max(veg_data_2022$days_since_fire, na.rm = TRUE), by = 1))
-# Add quadratic term to prediction data
-pred_days <- pred_days %>%
-  mutate(days_since_fire_sq = days_since_fire^2)
 
 # Define a function to compute predictions and 95% CI
 get_predictions <- function(model, newdata) {
@@ -1174,7 +1170,6 @@ get_predictions <- function(model, newdata) {
   newdata$upr <- pmax(0, preds$fit + 1.96 * preds$se.fit)
   return(newdata)
 }
-
 
 # Generate predictions for each model
 pred_height_grass <- get_predictions(grass_height_model, pred_days) %>% mutate(variable = "Grass Height (cm)", type = "Height")
@@ -1186,11 +1181,11 @@ pred_cover_forb  <- get_predictions(forb_cover_model, pred_days) %>% mutate(vari
 pred_cover_shrub <- get_predictions(shrub_cover_model, pred_days) %>% mutate(variable = "Shrub Cover (%)", type = "Cover")
 
 # Combine all predictions into one data frame
-pred_all <- bind_rows(pred_height_grass, pred_height_forb, pred_height_shrub,
+pred_all_lin_22 <- bind_rows(pred_height_grass, pred_height_forb, pred_height_shrub,
                       pred_cover_grass, pred_cover_forb, pred_cover_shrub)
 
 # Ensure the facet order is as desired
-pred_all$variable <- factor(pred_all$variable, 
+pred_all_lin_22$variable <- factor(pred_all$variable, 
                             levels = c("Grass Height (cm)", "Forb Height (cm)", "Shrub Height (cm)",
                                        "Grass Cover (%)", "Forb Cover (%)", "Shrub Cover (%)"))
 
@@ -1207,34 +1202,258 @@ custom_colors <- c("Grass Height (cm)" = "green3",
 # ---------------------------
 # Plot Predictions with 95% Confidence Intervals
 # ---------------------------
-ggplot(pred_all, aes(x = days_since_fire + 5, y = fit, color = variable, fill = variable)) +
-  geom_line(size = 1) +
+ggplot(pred_all_lin_22, aes(x = days_since_fire + 5, y = fit, color = variable, fill = variable)) +
+  geom_line(linewidth = 1) +
   geom_ribbon(aes(ymin = lwr, ymax = upr), alpha = 0.2, color = NA) +
-  facet_wrap(~variable, scales = "free_y", nrow = 2) +  # Top row: height, Bottom row: % cover
-  labs(title = "Predicted Vegetation Growth and Cover Over Time",
+  facet_wrap(~variable, scales = "free_y", nrow = 2) +
+  labs(title = "2022: Predicted Vegetation Growth and Cover Over Time (Linear Models)",
        x = "Days Since Fire", y = "Predicted Value") +
-  scale_x_continuous(breaks = c(0, 25, 50, 75, 100)) +  # Set specific x-axis tick marks
+  scale_x_continuous(breaks = c(0, 25, 50, 75, 100)) +
   scale_color_manual(values = custom_colors) +
   scale_fill_manual(values = custom_colors) +
   theme_bw() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1, colour="black", size=12, family="Times New Roman"),
-        axis.text.y = element_text(colour="black", size=12, family="Times New Roman"),
-        axis.title.y = element_text(colour="black", size=12, family="Times New Roman"),
-        axis.title.x = element_text(colour="black", size=12, family="Times New Roman"),
-        legend.title = element_text(colour="black", size=12, family="Times New Roman"),
-        legend.text = element_text(colour="black", size=12, family="Times New Roman"),
-        plot.title = element_text(size=14, family="Times New Roman"),
-        plot.subtitle = element_text(size=12, family="Times New Roman"),
-        plot.caption = element_text(size=10, family="Times New Roman"),
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, colour = "black", size = 12, family = "Times New Roman"),
+        axis.text.y = element_text(colour = "black", size = 12, family = "Times New Roman"),
+        axis.title.y = element_text(colour = "black", size = 12, family = "Times New Roman"),
+        axis.title.x = element_text(colour = "black", size = 12, family = "Times New Roman"),
+        legend.title = element_text(colour = "black", size = 12, family = "Times New Roman"),
+        legend.text = element_text(colour = "black", size = 12, family = "Times New Roman"),
+        plot.title = element_text(size = 14, family = "Times New Roman"),
+        plot.subtitle = element_text(size = 12, family = "Times New Roman"),
+        plot.caption = element_text(size = 10, family = "Times New Roman"),
         panel.grid.major = element_blank(),
         panel.grid.minor = element_blank(),
-        axis.line = element_line(color="black"),
-        axis.ticks = element_line(color="black"),
+        axis.line = element_line(color = "black"),
+        axis.ticks = element_line(color = "black"),
         legend.position = "none")
 
-        
+# Load MuMIn for r.squaredGLMM
+library(MuMIn)
+library(broom.mixed)  # For tidying lmer models
 
+# Function to extract model stats
+get_model_stats <- function(model) {
+  r2_vals <- r.squaredGLMM(model)
+  coefs <- summary(model)$coefficients
+  
+  # Extract beta and SE for days_since_fire
+  beta <- coefs["days_since_fire", "Estimate"]
+  se   <- coefs["days_since_fire", "Std. Error"]
+  
+  data.frame(
+    Beta = beta,
+    Std_Error = se,
+    Marginal_R2 = r2_vals[1],
+    Conditional_R2 = r2_vals[2],
+    AIC = AIC(model),
+    LogLik = logLik(model)[1]
+  )
+}
 
+# Compile stats for all six models
+model_stats_2022_linear <- bind_rows(
+  get_model_stats(grass_height_model) %>% mutate(Model = "Grass Height"),
+  get_model_stats(forb_height_model) %>% mutate(Model = "Forb Height"),
+  get_model_stats(shrub_height_model) %>% mutate(Model = "Shrub Height"),
+  get_model_stats(grass_cover_model) %>% mutate(Model = "Grass Cover"),
+  get_model_stats(forb_cover_model) %>% mutate(Model = "Forb Cover"),
+  get_model_stats(shrub_cover_model) %>% mutate(Model = "Shrub Cover")
+)
 
+# View the result
+print(model_stats_2022_linear)
         
 ```
+
+Now, we repeat with quadratic models
+```{r}
+# Load necessary libraries
+library(ggplot2)
+library(dplyr)
+library(lme4)
+library(tidyr)
+library(scales)
+library(MuMIn)  # For r.squaredGLMM()
+
+# Convert date column to Date format
+veg_data_2022$date <- as.Date(veg_data_2022$date)
+
+# Define burn date and compute days since fire
+burn_date <- as.Date("2022-04-11")
+veg_data_2022 <- veg_data_2022 %>%
+  mutate(
+    days_since_fire = as.numeric(date - burn_date),
+    days_since_fire_sq = days_since_fire^2,
+    sample_new = (unit - 1) * 10 + sample
+  )
+
+# ---------------------------
+# Fit Mixed-Effects Models with Quadratic Terms
+# ---------------------------
+# Vegetation height models
+grass_height_model <- lmer(max_grasses_cm ~ days_since_fire + days_since_fire_sq + (1 | sample_new), data = veg_data_2022)
+forb_height_model  <- lmer(max_forbs_cm ~ days_since_fire + days_since_fire_sq + (1 | sample_new), data = veg_data_2022)
+shrub_height_model <- lmer(max_shrubs_cm ~ days_since_fire + days_since_fire_sq + (1 | sample_new), data = veg_data_2022)
+
+# Percent cover models
+grass_cover_model <- lmer(percent_grasses ~ days_since_fire + days_since_fire_sq + (1 | sample_new), data = veg_data_2022)
+forb_cover_model  <- lmer(percent_forbs ~ days_since_fire + days_since_fire_sq + (1 | sample_new), data = veg_data_2022)
+shrub_cover_model <- lmer(percent_shrubs ~ days_since_fire + days_since_fire_sq + (1 | sample_new), data = veg_data_2022)
+
+# ---------------------------
+# Generate Predictions with Confidence Intervals
+# ---------------------------
+# Sequence of prediction days
+pred_days <- data.frame(days_since_fire = seq(0, max(veg_data_2022$days_since_fire, na.rm = TRUE), by = 1)) %>%
+  mutate(days_since_fire_sq = days_since_fire^2)
+
+# Prediction function with 95% CI
+get_predictions <- function(model, newdata) {
+  preds <- predict(model, newdata = newdata, re.form = NA, se.fit = TRUE)
+  newdata$fit <- pmax(0, preds$fit)
+  newdata$lwr <- pmax(0, preds$fit - 1.96 * preds$se.fit)
+  newdata$upr <- pmax(0, preds$fit + 1.96 * preds$se.fit)
+  return(newdata)
+}
+
+# Generate predictions
+pred_height_grass <- get_predictions(grass_height_model, pred_days) %>% mutate(variable = "Grass Height (cm)", type = "Height")
+pred_height_forb  <- get_predictions(forb_height_model, pred_days) %>% mutate(variable = "Forb Height (cm)", type = "Height")
+pred_height_shrub <- get_predictions(shrub_height_model, pred_days) %>% mutate(variable = "Shrub Height (cm)", type = "Height")
+
+pred_cover_grass <- get_predictions(grass_cover_model, pred_days) %>% mutate(variable = "Grass Cover (%)", type = "Cover")
+pred_cover_forb  <- get_predictions(forb_cover_model, pred_days) %>% mutate(variable = "Forb Cover (%)", type = "Cover")
+pred_cover_shrub <- get_predictions(shrub_cover_model, pred_days) %>% mutate(variable = "Shrub Cover (%)", type = "Cover")
+
+# Combine predictions
+pred_all_quad_22 <- bind_rows(pred_height_grass, pred_height_forb, pred_height_shrub,
+                      pred_cover_grass, pred_cover_forb, pred_cover_shrub)
+
+# Set facet order
+pred_all_quad_22$variable <- factor(pred_all$variable,
+                            levels = c("Grass Height (cm)", "Forb Height (cm)", "Shrub Height (cm)",
+                                       "Grass Cover (%)", "Forb Cover (%)", "Shrub Cover (%)"))
+
+# ---------------------------
+# Define Custom Colors
+# ---------------------------
+custom_colors <- c("Grass Height (cm)" = "green3",
+                   "Forb Height (cm)"  = "darkorange2",
+                   "Shrub Height (cm)" = "saddlebrown",
+                   "Grass Cover (%)"   = "green3",
+                   "Forb Cover (%)"    = "darkorange2",
+                   "Shrub Cover (%)"   = "saddlebrown")
+
+# ---------------------------
+# Plot Predictions with 95% Confidence Intervals
+# ---------------------------
+ggplot(pred_all_quad_22, aes(x = days_since_fire + 5, y = fit, color = variable, fill = variable)) +
+  geom_line(linewidth = 1) +
+  geom_ribbon(aes(ymin = lwr, ymax = upr), alpha = 0.2, color = NA) +
+  facet_wrap(~variable, scales = "free_y", nrow = 2) +
+  labs(title = "2022: Predicted Vegetation Growth and Cover Over Time (Quadratic Models)",
+       x = "Days Since Fire", y = "Predicted Value") +
+  scale_x_continuous(breaks = c(0, 25, 50, 75, 100)) +
+  scale_color_manual(values = custom_colors) +
+  scale_fill_manual(values = custom_colors) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, colour = "black", size = 12, family = "Times New Roman"),
+        axis.text.y = element_text(colour = "black", size = 12, family = "Times New Roman"),
+        axis.title.y = element_text(colour = "black", size = 12, family = "Times New Roman"),
+        axis.title.x = element_text(colour = "black", size = 12, family = "Times New Roman"),
+        legend.title = element_text(colour = "black", size = 12, family = "Times New Roman"),
+        legend.text = element_text(colour = "black", size = 12, family = "Times New Roman"),
+        plot.title = element_text(size = 14, family = "Times New Roman"),
+        plot.subtitle = element_text(size = 12, family = "Times New Roman"),
+        plot.caption = element_text(size = 10, family = "Times New Roman"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.line = element_line(color = "black"),
+        axis.ticks = element_line(color = "black"),
+        legend.position = "none")
+        
+# Load required packages
+library(MuMIn)
+library(dplyr)
+
+# Function to extract stats for quadratic models
+get_model_stats_quad <- function(model) {
+  r2_vals <- r.squaredGLMM(model)
+  coefs <- summary(model)$coefficients
+  
+  # Extract betas and standard errors
+  beta1 <- coefs["days_since_fire", "Estimate"]
+  se1   <- coefs["days_since_fire", "Std. Error"]
+  
+  beta2 <- coefs["days_since_fire_sq", "Estimate"]
+  se2   <- coefs["days_since_fire_sq", "Std. Error"]
+  
+  data.frame(
+    Beta1 = beta1,
+    SE1 = se1,
+    Beta2 = beta2,
+    SE2 = se2,
+    Marginal_R2 = r2_vals[1],
+    Conditional_R2 = r2_vals[2],
+    AIC = AIC(model),
+    LogLik = logLik(model)[1]
+  )
+}
+
+# ---------------------------
+# Extract AIC, R², and Betas for Quadratic Models
+# ---------------------------
+model_stats_2022_quad <- bind_rows(
+  get_model_stats_quad(grass_height_model) %>% mutate(Model = "Grass Height"),
+  get_model_stats_quad(forb_height_model) %>% mutate(Model = "Forb Height"),
+  get_model_stats_quad(shrub_height_model) %>% mutate(Model = "Shrub Height"),
+  get_model_stats_quad(grass_cover_model) %>% mutate(Model = "Grass Cover"),
+  get_model_stats_quad(forb_cover_model) %>% mutate(Model = "Forb Cover"),
+  get_model_stats_quad(shrub_cover_model) %>% mutate(Model = "Shrub Cover")
+)
+
+# View model fit stats
+print(model_stats_2022_quad)
+```
+
+Making plot of Best predictions
+```{r}
+
+#Adding column "year"
+best_preds_22 <- best_preds_22 %>%
+  mutate(year = "2022")
+
+
+# Select the best-fit model predictions for each variable
+best_preds_22 <- bind_rows(
+  pred_all_lin_22 %>% filter(variable %in% c("Grass Height (cm)", "Forb Height (cm)", "Grass Cover (%)", "Forb Cover (%)")),
+  pred_all_quad_22 %>% filter(variable %in% c("Shrub Height (cm)", "Shrub Cover (%)"))
+)
+
+# Updated plot
+ggplot(best_preds_22, aes(x = days_since_fire + 5, y = fit)) +
+  geom_line(color = "midnightblue", linewidth = 1) +
+  geom_ribbon(aes(ymin = lwr, ymax = upr), fill = "midnightblue", alpha = 0.2) +
+  facet_wrap(~variable, scales = "free_y", nrow = 2) +
+  labs(title = "2022: Predicted Vegetation Growth (Best Models per Variable)",
+       x = "Days Since Fire", y = "Predicted Value") +
+  scale_x_continuous(breaks = c(0, 25, 50, 75, 100)) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, colour = "black", size = 12, family = "Times New Roman"),
+        axis.text.y = element_text(colour = "black", size = 12, family = "Times New Roman"),
+        axis.title.y = element_text(colour = "black", size = 12, family = "Times New Roman"),
+        axis.title.x = element_text(colour = "black", size = 12, family = "Times New Roman"),
+        legend.title = element_text(colour = "black", size = 12, family = "Times New Roman"),
+        legend.text = element_text(colour = "black", size = 12, family = "Times New Roman"),
+        plot.title = element_text(size = 14, family = "Times New Roman"),
+        plot.subtitle = element_text(size = 12, family = "Times New Roman"),
+        plot.caption = element_text(size = 10, family = "Times New Roman"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.line = element_line(color = "black"),
+        axis.ticks = element_line(color = "black"),
+        legend.position = "none")
+
+
+```
+
