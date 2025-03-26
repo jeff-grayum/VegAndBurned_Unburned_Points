@@ -1147,20 +1147,20 @@ veg_data_2022 <- veg_data_2022 %>%
 # Fit Mixed-Effects Models with Linear Term for days_since_fire
 # ---------------------------
 # Models for vegetation height
-grass_height_model <- lmer(max_grasses_cm ~ days_since_fire + (1 | sample_new), data = veg_data_2022)
-forb_height_model  <- lmer(max_forbs_cm ~ days_since_fire + (1 | sample_new), data = veg_data_2022)
-shrub_height_model <- lmer(max_shrubs_cm ~ days_since_fire + (1 | sample_new), data = veg_data_2022)
+grass_height_model_lin22 <- lmer(max_grasses_cm ~ days_since_fire + (1 | sample_new), data = veg_data_2022)
+forb_height_model_lin22  <- lmer(max_forbs_cm ~ days_since_fire + (1 | sample_new), data = veg_data_2022)
+shrub_height_model_lin22 <- lmer(max_shrubs_cm ~ days_since_fire + (1 | sample_new), data = veg_data_2022)
 
 # Models for percent cover
-grass_cover_model <- lmer(percent_grasses ~ days_since_fire + (1 | sample_new), data = veg_data_2022)
-forb_cover_model  <- lmer(percent_forbs ~ days_since_fire + (1 | sample_new), data = veg_data_2022)
-shrub_cover_model <- lmer(percent_shrubs ~ days_since_fire + (1 | sample_new), data = veg_data_2022)
+grass_cover_model_lin22 <- lmer(percent_grasses ~ days_since_fire + (1 | sample_new), data = veg_data_2022)
+forb_cover_model_lin22  <- lmer(percent_forbs ~ days_since_fire + (1 | sample_new), data = veg_data_2022)
+shrub_cover_model_lin22 <- lmer(percent_shrubs ~ days_since_fire + (1 | sample_new), data = veg_data_2022)
 
 # ---------------------------
 # Generate Predictions with Confidence Intervals
 # ---------------------------
 # Create a sequence of days_since_fire for prediction
-pred_days <- data.frame(days_since_fire = seq(0, max(veg_data_2022$days_since_fire, na.rm = TRUE), by = 1))
+pred_days22 <- data.frame(days_since_fire = seq(0, max(veg_data_2022$days_since_fire, na.rm = TRUE), by = 1))
 
 # Define a function to compute predictions and 95% CI
 get_predictions <- function(model, newdata) {
@@ -1172,22 +1172,23 @@ get_predictions <- function(model, newdata) {
 }
 
 # Generate predictions for each model
-pred_height_grass <- get_predictions(grass_height_model, pred_days) %>% mutate(variable = "Grass Height (cm)", type = "Height")
-pred_height_forb  <- get_predictions(forb_height_model, pred_days) %>% mutate(variable = "Forb Height (cm)", type = "Height")
-pred_height_shrub <- get_predictions(shrub_height_model, pred_days) %>% mutate(variable = "Shrub Height (cm)", type = "Height")
+pred_height_grass_lin22 <- get_predictions(grass_height_model_lin22, pred_days22) %>% mutate(variable = "Grass Height (cm)", type = "Height")
+pred_height_forb_lin22  <- get_predictions(forb_height_model_lin22, pred_days22) %>% mutate(variable = "Forb Height (cm)", type = "Height")
+pred_height_shrub_lin22 <- get_predictions(shrub_height_model_lin22, pred_days22) %>% mutate(variable = "Shrub Height (cm)", type = "Height")
 
-pred_cover_grass <- get_predictions(grass_cover_model, pred_days) %>% mutate(variable = "Grass Cover (%)", type = "Cover")
-pred_cover_forb  <- get_predictions(forb_cover_model, pred_days) %>% mutate(variable = "Forb Cover (%)", type = "Cover")
-pred_cover_shrub <- get_predictions(shrub_cover_model, pred_days) %>% mutate(variable = "Shrub Cover (%)", type = "Cover")
+pred_cover_grass_lin22 <- get_predictions(grass_cover_model_lin22, pred_days22) %>% mutate(variable = "Grass Cover (%)", type = "Cover")
+pred_cover_forb_lin22  <- get_predictions(forb_cover_model_lin22, pred_days22) %>% mutate(variable = "Forb Cover (%)", type = "Cover")
+pred_cover_shrub_lin22 <- get_predictions(shrub_cover_model_lin22, pred_days22) %>% mutate(variable = "Shrub Cover (%)", type = "Cover")
 
 # Combine all predictions into one data frame
-pred_all_lin_22 <- bind_rows(pred_height_grass, pred_height_forb, pred_height_shrub,
-                      pred_cover_grass, pred_cover_forb, pred_cover_shrub)
+pred_all_lin_22 <- bind_rows(pred_height_grass_lin22, pred_height_forb_lin22, pred_height_shrub_lin22,
+                      pred_cover_grass_lin22, pred_cover_forb_lin22, pred_cover_shrub_lin22)
 
 # Ensure the facet order is as desired
-pred_all_lin_22$variable <- factor(pred_all$variable, 
-                            levels = c("Grass Height (cm)", "Forb Height (cm)", "Shrub Height (cm)",
-                                       "Grass Cover (%)", "Forb Cover (%)", "Shrub Cover (%)"))
+pred_all_lin_22$variable <- factor(pred_all_lin_22$variable,
+                                   levels = c("Grass Height (cm)", "Forb Height (cm)", "Shrub Height (cm)",
+                                              "Grass Cover (%)", "Forb Cover (%)", "Shrub Cover (%)"))
+
 
 # ---------------------------
 # Define Custom Colors
@@ -1252,12 +1253,12 @@ get_model_stats <- function(model) {
 
 # Compile stats for all six models
 model_stats_2022_linear <- bind_rows(
-  get_model_stats(grass_height_model) %>% mutate(Model = "Grass Height"),
-  get_model_stats(forb_height_model) %>% mutate(Model = "Forb Height"),
-  get_model_stats(shrub_height_model) %>% mutate(Model = "Shrub Height"),
-  get_model_stats(grass_cover_model) %>% mutate(Model = "Grass Cover"),
-  get_model_stats(forb_cover_model) %>% mutate(Model = "Forb Cover"),
-  get_model_stats(shrub_cover_model) %>% mutate(Model = "Shrub Cover")
+  get_model_stats(grass_height_model_lin22) %>% mutate(Model = "Grass Height"),
+  get_model_stats(forb_height_model_lin22) %>% mutate(Model = "Forb Height"),
+  get_model_stats(shrub_height_model_lin22) %>% mutate(Model = "Shrub Height"),
+  get_model_stats(grass_cover_model_lin22) %>% mutate(Model = "Grass Cover"),
+  get_model_stats(forb_cover_model_lin22) %>% mutate(Model = "Forb Cover"),
+  get_model_stats(shrub_cover_model_lin22) %>% mutate(Model = "Shrub Cover")
 )
 
 # View the result
@@ -1291,20 +1292,20 @@ veg_data_2022 <- veg_data_2022 %>%
 # Fit Mixed-Effects Models with Quadratic Terms
 # ---------------------------
 # Vegetation height models
-grass_height_model <- lmer(max_grasses_cm ~ days_since_fire + days_since_fire_sq + (1 | sample_new), data = veg_data_2022)
-forb_height_model  <- lmer(max_forbs_cm ~ days_since_fire + days_since_fire_sq + (1 | sample_new), data = veg_data_2022)
-shrub_height_model <- lmer(max_shrubs_cm ~ days_since_fire + days_since_fire_sq + (1 | sample_new), data = veg_data_2022)
+grass_height_model_quad22 <- lmer(max_grasses_cm ~ days_since_fire + days_since_fire_sq + (1 | sample_new), data = veg_data_2022)
+forb_height_model_quad22  <- lmer(max_forbs_cm ~ days_since_fire + days_since_fire_sq + (1 | sample_new), data = veg_data_2022)
+shrub_height_model_quad22 <- lmer(max_shrubs_cm ~ days_since_fire + days_since_fire_sq + (1 | sample_new), data = veg_data_2022)
 
 # Percent cover models
-grass_cover_model <- lmer(percent_grasses ~ days_since_fire + days_since_fire_sq + (1 | sample_new), data = veg_data_2022)
-forb_cover_model  <- lmer(percent_forbs ~ days_since_fire + days_since_fire_sq + (1 | sample_new), data = veg_data_2022)
-shrub_cover_model <- lmer(percent_shrubs ~ days_since_fire + days_since_fire_sq + (1 | sample_new), data = veg_data_2022)
+grass_cover_model_quad22 <- lmer(percent_grasses ~ days_since_fire + days_since_fire_sq + (1 | sample_new), data = veg_data_2022)
+forb_cover_model_quad22  <- lmer(percent_forbs ~ days_since_fire + days_since_fire_sq + (1 | sample_new), data = veg_data_2022)
+shrub_cover_model_quad22 <- lmer(percent_shrubs ~ days_since_fire + days_since_fire_sq + (1 | sample_new), data = veg_data_2022)
 
 # ---------------------------
 # Generate Predictions with Confidence Intervals
 # ---------------------------
 # Sequence of prediction days
-pred_days <- data.frame(days_since_fire = seq(0, max(veg_data_2022$days_since_fire, na.rm = TRUE), by = 1)) %>%
+pred_days22 <- data.frame(days_since_fire = seq(0, max(veg_data_2022$days_since_fire, na.rm = TRUE), by = 1)) %>%
   mutate(days_since_fire_sq = days_since_fire^2)
 
 # Prediction function with 95% CI
@@ -1317,20 +1318,20 @@ get_predictions <- function(model, newdata) {
 }
 
 # Generate predictions
-pred_height_grass <- get_predictions(grass_height_model, pred_days) %>% mutate(variable = "Grass Height (cm)", type = "Height")
-pred_height_forb  <- get_predictions(forb_height_model, pred_days) %>% mutate(variable = "Forb Height (cm)", type = "Height")
-pred_height_shrub <- get_predictions(shrub_height_model, pred_days) %>% mutate(variable = "Shrub Height (cm)", type = "Height")
+pred_height_grass_quad22 <- get_predictions(grass_height_model_quad22, pred_days22) %>% mutate(variable = "Grass Height (cm)", type = "Height")
+pred_height_forb_quad22  <- get_predictions(forb_height_model_quad22, pred_days22) %>% mutate(variable = "Forb Height (cm)", type = "Height")
+pred_height_shrub_quad22 <- get_predictions(shrub_height_model_quad22, pred_days22) %>% mutate(variable = "Shrub Height (cm)", type = "Height")
 
-pred_cover_grass <- get_predictions(grass_cover_model, pred_days) %>% mutate(variable = "Grass Cover (%)", type = "Cover")
-pred_cover_forb  <- get_predictions(forb_cover_model, pred_days) %>% mutate(variable = "Forb Cover (%)", type = "Cover")
-pred_cover_shrub <- get_predictions(shrub_cover_model, pred_days) %>% mutate(variable = "Shrub Cover (%)", type = "Cover")
+pred_cover_grass_quad22 <- get_predictions(grass_cover_model_quad22, pred_days22) %>% mutate(variable = "Grass Cover (%)", type = "Cover")
+pred_cover_forb_quad22  <- get_predictions(forb_cover_model_quad22, pred_days22) %>% mutate(variable = "Forb Cover (%)", type = "Cover")
+pred_cover_shrub_quad22 <- get_predictions(shrub_cover_model_quad22, pred_days22) %>% mutate(variable = "Shrub Cover (%)", type = "Cover")
 
 # Combine predictions
-pred_all_quad_22 <- bind_rows(pred_height_grass, pred_height_forb, pred_height_shrub,
-                      pred_cover_grass, pred_cover_forb, pred_cover_shrub)
+pred_all_quad_22 <- bind_rows(pred_height_grass_quad22, pred_height_forb_quad22, pred_height_shrub_quad22,
+                      pred_cover_grass_quad22, pred_cover_forb_quad22, pred_cover_shrub_quad22)
 
 # Set facet order
-pred_all_quad_22$variable <- factor(pred_all$variable,
+pred_all_quad_22$variable <- factor(pred_all_quad_22$variable,
                             levels = c("Grass Height (cm)", "Forb Height (cm)", "Shrub Height (cm)",
                                        "Grass Cover (%)", "Forb Cover (%)", "Shrub Cover (%)"))
 
@@ -1404,12 +1405,12 @@ get_model_stats_quad <- function(model) {
 # Extract AIC, R², and Betas for Quadratic Models
 # ---------------------------
 model_stats_2022_quad <- bind_rows(
-  get_model_stats_quad(grass_height_model) %>% mutate(Model = "Grass Height"),
-  get_model_stats_quad(forb_height_model) %>% mutate(Model = "Forb Height"),
-  get_model_stats_quad(shrub_height_model) %>% mutate(Model = "Shrub Height"),
-  get_model_stats_quad(grass_cover_model) %>% mutate(Model = "Grass Cover"),
-  get_model_stats_quad(forb_cover_model) %>% mutate(Model = "Forb Cover"),
-  get_model_stats_quad(shrub_cover_model) %>% mutate(Model = "Shrub Cover")
+  get_model_stats_quad(grass_height_model_quad22) %>% mutate(Model = "Grass Height"),
+  get_model_stats_quad(forb_height_model_quad22) %>% mutate(Model = "Forb Height"),
+  get_model_stats_quad(shrub_height_model_quad22) %>% mutate(Model = "Shrub Height"),
+  get_model_stats_quad(grass_cover_model_quad22) %>% mutate(Model = "Grass Cover"),
+  get_model_stats_quad(forb_cover_model_quad22) %>% mutate(Model = "Forb Cover"),
+  get_model_stats_quad(shrub_cover_model_quad22) %>% mutate(Model = "Shrub Cover")
 )
 
 # View model fit stats
@@ -1419,19 +1420,16 @@ print(model_stats_2022_quad)
 Making plot of Best predictions
 ```{r}
 
-#Adding column "year"
-best_preds_22 <- best_preds_22 %>%
-  mutate(year = "2022")
-
-
 # Select the best-fit model predictions for each variable
 best_preds_22 <- bind_rows(
   pred_all_lin_22 %>% filter(variable %in% c("Grass Height (cm)", "Forb Height (cm)", "Grass Cover (%)", "Forb Cover (%)")),
   pred_all_quad_22 %>% filter(variable %in% c("Shrub Height (cm)", "Shrub Cover (%)"))
-)
+) %>%
+  mutate(year = "2022")
+
 
 # Updated plot
-ggplot(best_preds_22, aes(x = days_since_fire + 5, y = fit)) +
+ggplot(best_preds_22, aes(x = days_since_fire, y = fit)) +
   geom_line(color = "midnightblue", linewidth = 1) +
   geom_ribbon(aes(ymin = lwr, ymax = upr), fill = "midnightblue", alpha = 0.2) +
   facet_wrap(~variable, scales = "free_y", nrow = 2) +
