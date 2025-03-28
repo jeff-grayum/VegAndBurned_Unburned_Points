@@ -1160,7 +1160,7 @@ shrub_cover_model_lin22 <- lmer(percent_shrubs ~ days_since_fire + (1 | sample_n
 # Generate Predictions with Confidence Intervals
 # ---------------------------
 # Create a sequence of days_since_fire for prediction
-pred_days22 <- data.frame(days_since_fire = seq(0, max(veg_data_2022$days_since_fire, na.rm = TRUE), by = 1))
+pred_days22 <- data.frame(days_since_fire = seq(0, max(115, na.rm = TRUE), by = 1))
 
 # Define a function to compute predictions and 95% CI
 get_predictions <- function(model, newdata) {
@@ -1305,7 +1305,7 @@ shrub_cover_model_quad22 <- lmer(percent_shrubs ~ days_since_fire + days_since_f
 # Generate Predictions with Confidence Intervals
 # ---------------------------
 # Sequence of prediction days
-pred_days22 <- data.frame(days_since_fire = seq(0, max(veg_data_2022$days_since_fire, na.rm = TRUE), by = 1)) %>%
+pred_days22 <- data.frame(days_since_fire = seq(0, max(115, na.rm = TRUE), by = 1)) %>%
   mutate(days_since_fire_sq = days_since_fire^2)
 
 # Prediction function with 95% CI
@@ -1455,3 +1455,386 @@ ggplot(best_preds_22, aes(x = days_since_fire, y = fit)) +
 
 ```
 
+Lets try and re run our models using the predictive veg data.
+```{r}
+s22rx_uniq %>% view()
+
+veg_pred_pib_22 <- s22rx_uniq %>%
+select(pib, DSF)
+
+#Renaming and selecting appropriate columns
+best_preds_22_clean <- best_preds_22 %>%
+  rename(DSF = days_since_fire) %>%
+  select(-type, -lwr, -upr)
+  
+#Pivoting wider
+best_preds_22_wide <- best_preds_22_clean %>%
+  select(DSF, fit, variable) %>%  # Select only the columns we need
+  pivot_wider(
+    names_from = variable,
+    values_from = fit
+  )
+
+  
+best_preds_22_wide <- best_preds_22_wide %>%
+  rename(
+    hg = `Grass Height (cm)`,
+    hf = `Forb Height (cm)`,
+    pg = `Grass Cover (%)`,
+    pf = `Forb Cover (%)`,
+    hs = `Shrub Height (cm)`,
+    ps = `Shrub Cover (%)`
+  )
+  
+#Adding pib to best preds  
+best_preds_22_final <- best_preds_22_wide %>%
+  filter(DSF %in% s22rx_uniq$DSF) %>%
+  left_join(s22rx_uniq %>% select(DSF, pib), by = "DSF")
+  
+  best_preds_22_sc <- # List of renamed covariates to standardize
+
+
+
+
+# Center and scale (z-score) each covariate, adding _z suffix
+covariates <- c("DSF", "pg", "pf", "ps", "hg", "hf", "hs")
+
+best_preds_22_sc <- best_preds_22_final %>%
+  mutate(across(all_of(covariates), 
+                ~ scale(.)[, 1], 
+                .names = "{.col}_z"))
+
+
+  
+  best_preds_22_final %>%
+  ggplot(aes(DSF, hs)) + geom_point()
+  
+```
+
+Making betareg models with predictive data
+```{r}
+
+pmodel1 <- betareg(pib ~ DSF,
+                     data = best_preds_22_final,
+                     link = "logit",
+                     na.action = "na.pass")
+
+
+pmodel2 <- betareg(pib ~ pg, 
+                  data = best_preds_22_final,
+                  link = "logit",
+                  na.action = "na.pass")
+
+pmodel3 <- betareg(pib ~ pf, 
+                  data = best_preds_22_final,
+                  link = "logit",
+                  na.action = "na.pass")
+
+pmodel4 <- betareg(pib ~ ps,
+                  data = best_preds_22_final,
+                  link = "logit",
+                  na.action = "na.pass")
+
+pmodel5 <- betareg(pib ~ hg,
+                  link = "logit",
+                  data = best_preds_22_final,
+                  na.action = "na.pass")
+
+
+pmodel6 <- betareg(pib ~ hf,
+                  link = "logit",
+                  data = best_preds_22_final,
+                  na.action = "na.pass")
+
+
+pmodel7 <- betareg(pib ~ hs,
+                  link = "logit",
+                  data = best_preds_22_final,
+                  na.action = "na.pass")
+
+pmodel8 <- betareg(pib ~ 1,
+                  link = "logit",
+                  data = best_preds_22_final,
+                  na.action = "na.pass")
+
+pmodel9 <- betareg(pib ~ DSF + I(DSF^2),
+                   data = best_preds_22_final,
+                   link = "logit",
+                   na.action = "na.pass")
+
+
+```
+
+Ranking candidate models (breg)
+```{r}
+
+library(dplyr)
+library(broom)  # For tidy output of model summaries
+
+#### Ranking GAM models 2022 ####
+
+# Create model names and list
+model_names <- paste0("pmodel", 1:9)
+model_list <- list(pmodel1, pmodel2, pmodel3, pmodel4,
+                   pmodel5, pmodel6, pmodel7, pmodel8, pmodel9)
+
+# Create a summary data frame for all models
+model_summary_list <- lapply(model_list, function(model) {
+  # Extract model-level AIC and log-likelihood
+  aic_val <- AIC(model)
+  nll_val <- -logLik(model)
+  
+  # Extract beta, std error, and p-value of parametric term(s)
+  coef_info <- broom::tidy(model, parametric = TRUE) %>%
+    select(term, estimate, std.error, p.value)
+  
+  # Keep just the main slope term for simplicity (you can expand if needed)
+  main_term <- coef_info[2, ]  # assuming intercept is row 1
+  
+  data.frame(
+    Term = as.character(main_term$term),
+    Beta = main_term$estimate,
+    Std_Error = main_term$std.error,
+    P_Value = main_term$p.value,
+    AIC = aic_val,
+    NLL = nll_val
+  )
+})
+
+# Combine and add model names
+model_comparison <- bind_rows(model_summary_list)
+model_comparison$Model <- model_names
+
+# Calculate ΔAIC and weights
+model_comparison <- model_comparison %>%
+  arrange(AIC) %>%
+  mutate(Delta_AIC = AIC - min(AIC),
+         rll = exp(-0.5 * Delta_AIC),
+         weight = round(rll / sum(rll), 3)) %>%
+  select(Model, Term, Beta, Std_Error, P_Value, AIC, Delta_AIC, weight, NLL)
+
+# View the result
+model_comparison %>% view()
+
+summary(pmodel9)$p.table
+
+
+```
+
+```{r}
+#### Predict plots 2022 betatreg ####
+DSF_values <- seq(min(best_preds_22_final$DSF, na.rm = TRUE), max(best_preds_22_final$DSF, na.rm = TRUE), length.out = 1000)
+newdata <- data.frame(DSF = DSF_values)
+
+n_boot <- 1000  # Number of bootstrap samples
+set.seed(123)   # Set seed for reproducibility
+boot_preds <- matrix(NA, nrow = n_boot, ncol = length(DSF_values))
+
+for (i in 1:n_boot) {
+  resample_indices <- sample(nrow(best_preds_22_final), replace = TRUE)
+  resample_data <- best_preds_22_final[resample_indices, ]
+  boot_model <- betareg(pib ~ DSF + I(DSF^2), data = resample_data, link = "logit", na.action = "na.pass")
+  boot_preds[i, ] <- predict(boot_model, newdata = newdata, type = "response")
+}
+
+# Calculate the 95% confidence intervals
+ci_lower <- apply(boot_preds, 2, quantile, probs = 0.025)
+ci_upper <- apply(boot_preds, 2, quantile, probs = 0.975)
+
+# Calculate the predicted values for the plot
+predicted_pib <- predict(pmodel9, newdata = newdata, type = "response")
+
+
+
+# Assuming newdata already contains DSF, PredictedPIB, LowerCI, and UpperCI
+
+# Plot the raw data, prediction line, and confidence intervals
+ggplot(newdata, aes(x = DSF)) +
+  geom_point(data = best_preds_22_final, aes(x = DSF, y = (pib)), size = 2, alpha = 0.7) +  # Raw data points
+  geom_line(aes(y = predicted_pib), color = "black", size = 1.2) +  # Prediction line
+  geom_ribbon(aes(ymin = ci_lower, ymax = ci_upper), alpha = 0.2, fill = "red") +  # Confidence intervals
+  labs(x = "Days since fire", y = "Proportion of bobwhite in burned areas", title = "") +
+  theme_bw() +
+  scale_x_continuous(breaks = c(0, 30, 60, 90, 120, 150), limits = c(min(DSF_values), max(DSF_values))) +
+  theme(
+    legend.position = "none",
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.line = element_line(color = "black"),
+    axis.ticks = element_line(color = "black"),
+    axis.text.x = element_text(color = "black", size = 12),
+    axis.title.y = element_text(color = "black", size = 12),
+    axis.title.x = element_text(color = "black", size = 12),
+    plot.margin = margin(t = 5, r = 10, b = 5, l = 5, unit = "pt")
+  )
+```
+
+Repeating everything, but with centered and scaled data:
+Making betareg models with predictive data
+```{r}
+
+scmodel1 <- betareg(pib ~ DSF_z,
+                     data = best_preds_22_sc,
+                     link = "logit",
+                     na.action = "na.pass")
+
+
+scmodel2 <- betareg(pib ~ pg_z, 
+                  data = best_preds_22_sc,
+                  link = "logit",
+                  na.action = "na.pass")
+
+scmodel3 <- betareg(pib ~ pf_z, 
+                  data = best_preds_22_sc,
+                  link = "logit",
+                  na.action = "na.pass")
+
+scmodel4 <- betareg(pib ~ ps_z,
+                  data = best_preds_22_sc,
+                  link = "logit",
+                  na.action = "na.pass")
+
+scmodel5 <- betareg(pib ~ hg_z,
+                  link = "logit",
+                  data = best_preds_22_sc,
+                  na.action = "na.pass")
+
+
+scmodel6 <- betareg(pib ~ hf_z,
+                  link = "logit",
+                  data = best_preds_22_sc,
+                  na.action = "na.pass")
+
+
+scmodel7 <- betareg(pib ~ hs_z,
+                  link = "logit",
+                  data = best_preds_22_sc,
+                  na.action = "na.pass")
+
+scmodel8 <- betareg(pib ~ 1,
+                  link = "logit",
+                  data = best_preds_22_sc,
+                  na.action = "na.pass")
+
+scmodel9 <- betareg(pib ~ DSF_z + I(DSF_z^2),
+                   data = best_preds_22_sc,
+                   link = "logit",
+                   na.action = "na.pass")
+
+
+```
+
+Ranking candidate models (breg)
+```{r}
+
+library(dplyr)
+library(broom)  # For tidy output of model summaries
+
+#### Ranking GAM models 2022 ####
+
+# Create model names and list
+model_names <- paste0("scmodel", 1:9)
+model_list <- list(scmodel1, scmodel2, scmodel3, scmodel4,
+                   scmodel5, scmodel6, scmodel7, scmodel8, scmodel9)
+
+# Create a summary data frame for all models
+model_summary_list <- lapply(model_list, function(model) {
+  # Extract model-level AIC and log-likelihood
+  aic_val <- AIC(model)
+  nll_val <- -logLik(model)
+  
+  # Extract beta, std error, and p-value of parametric term(s)
+  coef_info <- broom::tidy(model, parametric = TRUE) %>%
+    select(term, estimate, std.error, p.value)
+  
+  # Keep just the main slope term for simplicity (you can expand if needed)
+  main_term <- coef_info[2, ]  # assuming intercept is row 1
+  
+  data.frame(
+    Term = as.character(main_term$term),
+    Beta = main_term$estimate,
+    Std_Error = main_term$std.error,
+    P_Value = main_term$p.value,
+    AIC = aic_val,
+    NLL = nll_val
+  )
+})
+
+# Combine and add model names
+model_comparison <- bind_rows(model_summary_list)
+model_comparison$Model <- model_names
+
+# Calculate ΔAIC and weights
+model_comparison_sc <- model_comparison %>%
+  arrange(AIC) %>%
+  mutate(Delta_AIC = AIC - min(AIC),
+         rll = exp(-0.5 * Delta_AIC),
+         weight = round(rll / sum(rll), 3)) %>%
+  select(Model, Term, Beta, Std_Error, P_Value, AIC, Delta_AIC, weight, NLL)
+
+# View the result
+model_comparison_sc %>% view()
+
+summary(scmodel9)
+
+
+```
+
+```{r}
+#### Predict plots 2022 betatreg ####
+DSF_values <- seq(min(best_preds_22_sc$DSF_z, na.rm = TRUE), max(best_preds_22_sc$DSF_z, na.rm = TRUE), length.out = 1000)
+newdata <- data.frame(DSF_z = DSF_values)
+
+n_boot <- 1000  # Number of bootstrap samples
+set.seed(123)   # Set seed for reproducibility
+boot_preds <- matrix(NA, nrow = n_boot, ncol = length(DSF_values))
+
+for (i in 1:n_boot) {
+  resample_indices <- sample(nrow(best_preds_22_sc), replace = TRUE)
+  resample_data <- best_preds_22_sc[resample_indices, ]
+  boot_model <- betareg(pib ~ DSF_z + I(DSF_z^2), data = resample_data, link = "logit", na.action = "na.pass")
+  boot_preds[i, ] <- predict(boot_model, newdata = newdata, type = "response")
+}
+
+# Calculate the 95% confidence intervals
+ci_lower <- apply(boot_preds, 2, quantile, probs = 0.025)
+ci_upper <- apply(boot_preds, 2, quantile, probs = 0.975)
+
+# Calculate the predicted values for the plot
+predicted_pib <- predict(scmodel9, newdata = newdata, type = "response")
+
+
+# Back-transform DSF_z to original DSF for plotting
+DSF_mean <- mean(best_preds_22_sc$DSF, na.rm = TRUE)
+DSF_sd <- sd(best_preds_22_sc$DSF, na.rm = TRUE)
+newdata$DSF <- DSF_values * DSF_sd + DSF_mean
+
+newdata$predicted_pib <- predicted_pib
+newdata$ci_lower <- ci_lower
+newdata$ci_upper <- ci_upper
+
+# Plot the raw data, prediction line, and confidence intervals
+ggplot(newdata, aes(x = DSF)) +
+  geom_point(data = best_preds_22_final, aes(x = DSF, y = pib), size = 2, alpha = 0.7) +
+  geom_line(aes(y = predicted_pib), color = "black", size = 1.2) +
+  geom_ribbon(aes(ymin = ci_lower, ymax = ci_upper), alpha = 0.2, fill = "red") +
+  labs(x = "Days since fire",
+       y = "Proportion of bobwhites in burned areas",
+       title = "") +
+  theme_bw() +
+  scale_x_continuous(breaks = c(0, 30, 60, 90, 120, 150)) +
+  theme(
+    legend.position = "none",
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.line = element_line(color = "black"),
+    axis.ticks = element_line(color = "black"),
+    axis.text.x = element_text(color = "black", size = 12),
+    axis.title.y = element_text(color = "black", size = 12),
+    axis.title.x = element_text(color = "black", size = 12),
+    plot.margin = margin(t = 5, r = 10, b = 5, l = 5, unit = "pt")
+  )
+
+
+
+```
